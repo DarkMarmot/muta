@@ -12,21 +12,24 @@ Muta.init = function init(el, path){
 
 };
 
-Muta.cog = function has(cogDef){
+Muta.cog = function cog(def){
 
-    ScriptLoader.currentScript = cogDef;
-
-};
-
-Muta.trait = function has(traitDef){
-
-
+    def.__type = 'cog';
+    ScriptLoader.currentScript = def;
 
 };
 
-Muta.scrap = function has(scrapDef){
+Muta.trait = function trait(def){
 
+    def.__type = 'trait';
+    ScriptLoader.currentScript = def;
 
+};
+
+Muta.scrap = function scrap(def){
+
+    def.__type = 'scrap';
+    ScriptLoader.currentScript = def;
 
 };
 
@@ -34,10 +37,6 @@ Muta.loadScript = function(path){
     ScriptLoader.load(path);
 };
 
-Muta._takeCurrentScript = function(){
-    const taken = currentScript;
-    currentScript = null;
-    return taken;
-};
+
 
 export default Muta;

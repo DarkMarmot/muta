@@ -3393,8 +3393,9 @@ Catbus$1.flush = function(){
 // provides dynamic dependency callbacks (in case new dependencies emerge)
 
 const ScriptLoader = {};
-const status = { loaded: {}, failed: {}, fetching: {}};
+const status = { loaded: {}, failed: {}, fetched: {}};
 const cache = {};
+
 const listenersByFile = {}; // loaded only, use init timeouts to request again
 
 
@@ -3412,7 +3413,7 @@ ScriptLoader.onError = function onError(e){
     const src = e.target.src;
     const f = status.failed[src] || 0;
     status.failed[src] = f + 1;
-    status.fetching[src] = false;
+    status.fetched[src] = false;
     cleanup(e);
 
     if(f < 3) {
@@ -3426,28 +3427,28 @@ ScriptLoader.onError = function onError(e){
 ScriptLoader.onLoad = function onLoad(e){
 
     const src = e.target.src;
-    console.log('on load for', src);
     status.loaded[src] = true;
+
     cache[src] = ScriptLoader.currentScript;
-    console.log('cache',cache);
+
+    console.log(cache);
     cleanup(e);
 
     const listeners = listenersByFile[src] || [];
     const len = listeners.length;
     for(let i = 0; i < len; ++i){
-        listeners[i]();
+        const f = listeners[i];
+        f.call(null, src);
     }
 
     listenersByFile[src] = [];
 
-    console.log('script load', e);
-
 };
 
-ScriptLoader.request = function(path, callback){
+ScriptLoader.request = function request(path, callback){
 
     if(status.loaded[path])
-        return callback(path);
+        return callback.call(null, path);
 
     const listeners = listenersByFile[path] = listenersByFile[path] || [];
     if(listeners.indexOf[callback] === -1){
@@ -3460,7 +3461,7 @@ ScriptLoader.request = function(path, callback){
 
 ScriptLoader.load = function(path){
 
-    if(status.fetching[path]) // also true if loaded, this only clears on error
+    if(status.fetched[path]) // also true if loaded, this only clears on error
         return;
 
     const script = document.createElement("script");
@@ -3471,12 +3472,8 @@ ScriptLoader.load = function(path){
     script.charset = "utf-8";
     script.src = path;
 
-    console.log('here comes', path);
-    status.fetching[path] = true;
+    status.fetched[path] = true;
     document.head.appendChild(script);
-
-    console.log('added', path);
-
 
 };
 
@@ -3496,32 +3493,29 @@ Muta.init = function init(el, path){
 
 };
 
-Muta.cog = function has(cogDef){
+Muta.cog = function cog(def){
 
-    ScriptLoader.currentScript = cogDef;
-
-};
-
-Muta.trait = function has(traitDef){
-
-
+    def.__type = 'cog';
+    ScriptLoader.currentScript = def;
 
 };
 
-Muta.scrap = function has(scrapDef){
+Muta.trait = function trait(def){
 
+    def.__type = 'trait';
+    ScriptLoader.currentScript = def;
 
+};
+
+Muta.scrap = function scrap(def){
+
+    def.__type = 'scrap';
+    ScriptLoader.currentScript = def;
 
 };
 
 Muta.loadScript = function(path){
     ScriptLoader.load(path);
-};
-
-Muta._takeCurrentScript = function(){
-    const taken = currentScript;
-    currentScript = null;
-    return taken;
 };
 
 return Muta;

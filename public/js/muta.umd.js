@@ -3389,8 +3389,45 @@ Catbus$1.flush = function(){
 
 };
 
+// the PathResolver is a namespace that uses a browser hack to generate an
+// absolute path from a url string -- using an anchor tag's href.
+// it combines the aliasMap with a file and possible base directory.
+
+const PathResolver = {};
+const ANCHOR = document.createElement('a');
+
+// base is current file root or specified root
+
+PathResolver.resolveFile = function resolveFile(aliasMap, file, dir) {
+
+    file = aliasMap ? (aliasMap[file] || file) : file;
+
+    if(dir && file.indexOf('http') !== 0)  {
+
+            dir = aliasMap ? (aliasMap[dir] || dir) : dir;
+            const lastChar = dir.substr(-1);
+            file = (lastChar !== '/') ? dir + '/' + file : dir + file;
+
+    }
+
+    ANCHOR.href = file;
+    return ANCHOR.href;
+
+};
+
+PathResolver.resolveDir = function resolveDir(aliasMap, file, dir){
+
+    return toDir(PathResolver.resolveFile(aliasMap, file, dir));
+
+};
+
+
+function toDir(path){
+    const i = path.lastIndexOf('/');
+    return path.substring(0, i + 1);
+}
+
 // holds a cache of all scripts loaded by url
-// provides dynamic dependency callbacks (in case new dependencies emerge)
 
 const ScriptLoader = {};
 const status = { loaded: {}, failed: {}, fetched: {}};
@@ -3430,6 +3467,8 @@ ScriptLoader.onLoad = function onLoad(e){
     status.loaded[src] = true;
 
     cache[src] = ScriptLoader.currentScript;
+    ScriptLoader.currentScript.__file = src;
+    ScriptLoader.currentScript.__dir = toDir$1(src);
 
     console.log(cache);
     cleanup(e);
@@ -3445,13 +3484,22 @@ ScriptLoader.onLoad = function onLoad(e){
 
 };
 
+ScriptLoader.read = function script(path){
+    return cache[path];
+};
+
+ScriptLoader.has = function has(path){
+    return !!status.loaded[path];
+};
+
 ScriptLoader.request = function request(path, callback){
 
     if(status.loaded[path])
         return callback.call(null, path);
 
     const listeners = listenersByFile[path] = listenersByFile[path] || [];
-    if(listeners.indexOf[callback] === -1){
+    const i = listeners.indexOf(callback);
+    if(i === -1){
         listeners.push(callback);
     }
 
@@ -3477,6 +3525,60 @@ ScriptLoader.load = function(path){
 
 };
 
+function toDir$1(path){
+    const i = path.lastIndexOf('/');
+    return path.substring(0, i + 1);
+}
+
+function ScriptMonitor(paths, callback){
+
+    this.callback = callback;
+    this.needs = notReady(paths);
+    this.needs.length === 0 ? this.callback() : requestNeeds(this);
+
+}
+
+function requestNeeds(monitor){
+
+    const callback = onNeedReady.bind(monitor);
+
+    const paths = monitor.needs;
+    const len = paths.length;
+
+    for (let i = 0; i < len; i++) {
+        const path = paths[i];
+        ScriptLoader.request(path, callback);
+    }
+
+}
+
+
+function onNeedReady(path){
+
+    const needs = this.needs;
+    const i = needs.indexOf(path);
+    needs.splice(i, 1);
+
+    if(!needs.length)
+        this.callback();
+
+}
+
+
+function notReady(arr){
+
+    const remaining = [];
+
+    for(let i = 0; i < arr.length; i++){
+        const path = arr[i];
+        if(!ScriptLoader.has(path))
+            remaining.push(path);
+    }
+
+    return remaining;
+
+}
+
 function App(el, path){
 
     this.catbus = Catbus;
@@ -3487,6 +3589,8 @@ function App(el, path){
 }
 
 const Muta = {};
+Muta.PR = PathResolver;
+
 Muta.init = function init(el, path){
 
     return new App(el, path);
@@ -3507,15 +3611,19 @@ Muta.trait = function trait(def){
 
 };
 
-Muta.scrap = function scrap(def){
+Muta.book = function book(def){
 
-    def.__type = 'scrap';
+    def.__type = 'book';
     ScriptLoader.currentScript = def;
 
 };
 
 Muta.loadScript = function(path){
     ScriptLoader.load(path);
+};
+
+Muta.getScriptMonitor = function(paths, readyCallback){
+    return new ScriptMonitor(paths, readyCallback);
 };
 
 return Muta;

@@ -1,32 +1,31 @@
 
-// path context cache -- for url base combos already resolved
+// the PathResolver is a namespace that uses a browser hack to generate an
+// absolute path from a url string -- using an anchor tag's href.
+// it combines the aliasMap with a file and possible base directory.
 
 const PathResolver = {};
 const ANCHOR = document.createElement('a');
 
-// base is current file root or specified root
+PathResolver.resolveFile = function resolveFile(aliasMap, file, dir) {
 
-PathResolver.resolveFile = function resolveFile(aliasMap, url, base) {
+    file = aliasMap ? (aliasMap[file] || file) : file;
 
-    url = aliasMap ? (aliasMap[url] || url) : url;
+    if(dir && file.indexOf('http') !== 0)  {
 
-    if(base && url.indexOf('http') !== 0)  {
-
-            base = aliasMap[base] || base;
-            const lastChar = base.substr(-1);
-            url = (lastChar !== '/') ? base + '/' + url : base + url;
+            dir = aliasMap ? (aliasMap[dir] || dir) : dir;
+            const lastChar = dir.substr(-1);
+            file = (lastChar !== '/') ? dir + '/' + file : dir + file;
 
     }
 
-    ANCHOR.href = url;
+    ANCHOR.href = file;
     return ANCHOR.href;
 
 };
 
-PathResolver.resolveDir = function resolveDir(aliasMap, url, base){
+PathResolver.resolveDir = function resolveDir(aliasMap, file, dir){
 
-    const path = PathResolver.resolveFile(aliasMap, url, base);
-    return toDir(path);
+    return toDir(PathResolver.resolveFile(aliasMap, file, dir));
 
 };
 
@@ -35,7 +34,6 @@ function toDir(path){
     const i = path.lastIndexOf('/');
     return path.substring(0, i + 1);
 }
-
 
 
 export default PathResolver;

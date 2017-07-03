@@ -1,17 +1,16 @@
 
 import PathResolver from './pathResolver.js';
 
-// each context contains a map of aliases
-// a cache of resolved url and base combos
-// a script monitor for when the context is ready
-// a getChild to make a new context with a shallow copy of the alias map
-// something to apply valves to the context
-
-// first alias context -- if local aliases or parent valves, extend parent's
-// if books, load books -- add aliases from books, new context
-
-// load books, add aliases, create new context
-// load traits
+// whenever new aliases or valves (limiting access to aliases) are encountered,
+// a new aliasContext is created and used to resolve files and directories.
+// it inherits the aliases from above and then extends or limits those.
+//
+// the resolveFile and resolveDir methods determine a path from a file and/or
+// directory combination (either can be an alias). if no directory is
+// given -- and the file or alias is not an absolute path -- then a relative path
+// is generated from the current file (returning a new absolute path).
+//
+// (all method calls are cached here for performance reasons)
 
 const EMPTY = {};
 

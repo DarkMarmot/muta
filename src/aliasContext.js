@@ -49,6 +49,8 @@ AliasContext.prototype.resolveDir = function resolveDir(url, base){
 };
 
 
+// limits the source hash to only have keys found in the valves hash (if present)
+
 function restrict(source, valves){
 
     if(!valves)
@@ -62,6 +64,7 @@ function restrict(source, valves){
     return result;
 }
 
+// creates a shallow copy of the source hash
 
 function copy(source, target){
 

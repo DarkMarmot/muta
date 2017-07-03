@@ -1,6 +1,5 @@
 
 // holds a cache of all scripts loaded by url
-// provides dynamic dependency callbacks (in case new dependencies emerge)
 
 const ScriptLoader = {};
 const status = { loaded: {}, failed: {}, fetched: {}};
@@ -40,6 +39,8 @@ ScriptLoader.onLoad = function onLoad(e){
     status.loaded[src] = true;
 
     cache[src] = ScriptLoader.currentScript;
+    ScriptLoader.currentScript.__file = src;
+    ScriptLoader.currentScript.__dir = toDir(src);
 
     console.log(cache);
     cleanup(e);
@@ -55,13 +56,22 @@ ScriptLoader.onLoad = function onLoad(e){
 
 };
 
+ScriptLoader.read = function script(path){
+    return cache[path];
+};
+
+ScriptLoader.has = function has(path){
+    return !!status.loaded[path];
+};
+
 ScriptLoader.request = function request(path, callback){
 
     if(status.loaded[path])
         return callback.call(null, path);
 
     const listeners = listenersByFile[path] = listenersByFile[path] || [];
-    if(listeners.indexOf[callback] === -1){
+    const i = listeners.indexOf(callback);
+    if(i === -1){
         listeners.push(callback);
     }
 
@@ -86,5 +96,10 @@ ScriptLoader.load = function(path){
     document.head.appendChild(script);
 
 };
+
+function toDir(path){
+    const i = path.lastIndexOf('/');
+    return path.substring(0, i + 1);
+}
 
 export default ScriptLoader;

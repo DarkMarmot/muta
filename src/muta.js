@@ -1,10 +1,14 @@
 import Catbus from './catbus.es.js';
+import PathResolver from './pathResolver.js';
 import ScriptLoader from './scriptLoader.js';
+import ScriptMonitor from './scriptMonitor.js';
 import App from './app.js';
 
 
 const Muta = {};
 const aliasCounter = 0;
+
+Muta.PR = PathResolver;
 
 Muta.init = function init(el, path){
 
@@ -26,9 +30,9 @@ Muta.trait = function trait(def){
 
 };
 
-Muta.scrap = function scrap(def){
+Muta.book = function book(def){
 
-    def.__type = 'scrap';
+    def.__type = 'book';
     ScriptLoader.currentScript = def;
 
 };
@@ -37,6 +41,9 @@ Muta.loadScript = function(path){
     ScriptLoader.load(path);
 };
 
+Muta.getScriptMonitor = function(paths, readyCallback){
+    return new ScriptMonitor(paths, readyCallback);
+};
 
 
 export default Muta;

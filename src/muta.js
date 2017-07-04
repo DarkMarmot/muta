@@ -3,22 +3,27 @@ import PathResolver from './pathResolver.js';
 import ScriptLoader from './scriptLoader.js';
 import ScriptMonitor from './scriptMonitor.js';
 import App from './app.js';
-
+import Cog from './cog.js';
 
 const Muta = {};
-const aliasCounter = 0;
+const NOOP = function(){};
 
 Muta.PR = PathResolver;
 
-Muta.init = function init(el, path){
+Muta.init = function init(el, url){
 
-    return new App(el, path);
+    return new Cog(el, url);
 
 };
 
 Muta.cog = function cog(def){
 
     def.__type = 'cog';
+    def.pre = NOOP; //
+    def.init = NOOP;
+    def.ready = NOOP;
+    def.mount = NOOP;
+    def.destroy = NOOP;
     ScriptLoader.currentScript = def;
 
 };

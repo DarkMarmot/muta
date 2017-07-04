@@ -3,8 +3,10 @@
 // absolute path from a url string -- using an anchor tag's href.
 // it combines the aliasMap with a file and possible base directory.
 
+
 const PathResolver = {};
 const ANCHOR = document.createElement('a');
+
 
 PathResolver.resolveFile = function resolveFile(aliasMap, file, dir) {
 
@@ -23,6 +25,7 @@ PathResolver.resolveFile = function resolveFile(aliasMap, file, dir) {
 
 };
 
+
 PathResolver.resolveDir = function resolveDir(aliasMap, file, dir){
 
     return toDir(PathResolver.resolveFile(aliasMap, file, dir));
@@ -31,8 +34,10 @@ PathResolver.resolveDir = function resolveDir(aliasMap, file, dir){
 
 
 function toDir(path){
+
     const i = path.lastIndexOf('/');
     return path.substring(0, i + 1);
+
 }
 
 

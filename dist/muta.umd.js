@@ -3393,10 +3393,10 @@ Catbus$1.flush = function(){
 // absolute path from a url string -- using an anchor tag's href.
 // it combines the aliasMap with a file and possible base directory.
 
+
 const PathResolver = {};
 const ANCHOR = document.createElement('a');
 
-// base is current file root or specified root
 
 PathResolver.resolveFile = function resolveFile(aliasMap, file, dir) {
 
@@ -3415,6 +3415,7 @@ PathResolver.resolveFile = function resolveFile(aliasMap, file, dir) {
 
 };
 
+
 PathResolver.resolveDir = function resolveDir(aliasMap, file, dir){
 
     return toDir(PathResolver.resolveFile(aliasMap, file, dir));
@@ -3423,8 +3424,10 @@ PathResolver.resolveDir = function resolveDir(aliasMap, file, dir){
 
 
 function toDir(path){
+
     const i = path.lastIndexOf('/');
     return path.substring(0, i + 1);
+
 }
 
 // holds a cache of all scripts loaded by url
@@ -3579,27 +3582,266 @@ function notReady(arr){
 
 }
 
-function App(el, path){
+// whenever new aliases or valves (limiting access to aliases) are encountered,
+// a new aliasContext is created and used to resolve files and directories.
+// it inherits the aliases from above and then extends or limits those.
+//
+// the resolveFile and resolveDir methods determine a path from a file and/or
+// directory combination (either can be an alias). if no directory is
+// given -- and the file or alias is not an absolute path -- then a relative path
+// is generated from the current file (returning a new absolute path).
+//
+// (all method calls are cached here for performance reasons)
 
-    this.catbus = Catbus;
-    this.scope = this.catbus.createChild();
+function AliasContext(sourceDir, aliasMap, valveMap){
+
+    this.sourceDir = sourceDir;
+    this.aliasMap = aliasMap ? restrict(copy(aliasMap), valveMap) : {};
+    this.fileCache = {}; // 2 level cache (first dir, then file)
+    this.dirCache = {}; // 2 level cache (first dir, then file)
+    this.shared = false; // shared once used by another lower cog
+
+}
+
+AliasContext.prototype.clone = function(){
+    return new AliasContext(this.sourceDir, this.aliasMap);
+};
+
+
+AliasContext.prototype.restrictAliasList = function(valveMap){
+    this.aliasMap = restrict(this.aliasMap, valveMap);
+    return this;
+};
+
+AliasContext.prototype.injectAlias = function(alias){
+    this.aliasMap[alias.name] = this.resolveFile(alias.file, alias.dir);
+    return this;
+};
+
+AliasContext.prototype.injectAliasList = function(aliasList){
+    for(let i = 0; i < aliasList.length; i++){
+        this.injectAlias(aliasList[i]);
+    }
+    return this;
+};
+
+// given a list of objects with file and dir, get urls not yet downloaded
+
+AliasContext.prototype.freshUrls = function freshUrls(list) {
+
+    const result = [];
+
+    if(!list)
+        return result;
+
+    for(let i = 0; i < list.length; i++){
+        const url = this.itemToUrl(list[i]);
+        if(!ScriptLoader.has(url) && result.indexOf(url) === -1)
+            result.push(url);
+    }
+
+    return result;
+
+};
+
+AliasContext.prototype.itemToUrl = function applyUrl(item) {
+    return this.resolveFile(item.file, item.dir);
+};
+
+
+AliasContext.prototype.resolveFile = function resolveFile(file, dir){
+
+    const cache = this.fileCache;
+    dir = dir || this.sourceDir || '';
+    const baseCache = cache[dir] = cache[dir] || {};
+    return baseCache[file] = baseCache[file] ||
+        PathResolver.resolveFile(this.aliasMap, file, dir);
+
+};
+
+AliasContext.prototype.resolveDir = function resolveDir(url, base){
+
+    const cache = this.dirCache;
+    base = base || this.sourceDir || '';
+    const baseCache = cache[base] = cache[base] || {};
+    return baseCache[url] = baseCache[url] ||
+        PathResolver.resolveDir(this.aliasMap, url, base);
+
+};
+
+
+// limits the source hash to only have keys found in the valves hash (if present)
+
+function restrict(source, valves){
+
+    if(!valves)
+        return source;
+
+    const result = {};
+    for(const k in valves){
+        result[k] = source[k];
+    }
+
+    return result;
+}
+
+// creates a shallow copy of the source hash
+
+function copy(source, target){
+
+    target = target || {};
+    for(const k in source){
+        target[k] = source[k];
+    }
+    return target;
+
+}
+
+function Cog(el, url, config, parent){
+
     this.el = el;
-    this.path = path;
+    this.parent = parent;
+    this.url = url;
+    this.dir = toDir$2(url);
+    this.script = null;
+    this.config = config || {};
+    this.scriptMonitor = null;
+    this.valveMap = null;
+    this.aliasContext = null;
+
+    this.bookUrls = null;
+    this.traitUrls = null;
+
+    this.load();
+
+}
+
+Cog.prototype.load = function() {
+
+    if(ScriptLoader.has(this.url)){
+        this.onScriptReady();
+    } else {
+        ScriptLoader.request(this.url, this.onScriptReady.bind(this));
+    }
+
+};
+
+Cog.prototype.onScriptReady = function() {
+
+    this.script = Object.create(ScriptLoader.read(this.url));
+    this.prep();
+
+};
+
+
+Cog.prototype.prep = function(){
+
+    const parent = this.parent;
+    const valveMap = parent ? parent.valveMap : null;
+    const aliasList = this.script.alias;
+
+    if(parent && parent.dir === this.dir && !aliasList && !valveMap){
+        // same relative path, no new aliases and no valves, reuse parent context
+        this.aliasContext = parent.aliasContext;
+        this.aliasContext.shared = true;
+    } else {
+        // new context, apply valves from parent then add aliases from cog
+        this.aliasContext = parent
+            ? parent.aliasContext.clone()
+            : new AliasContext(this.dir); // root of application
+        this.aliasContext.restrictAliasList(valveMap);
+        this.aliasContext.injectAliasList(aliasList);
+    }
+
+    this.script.prep && this.script.prep();
+    this.loadBooks();
+
+};
+
+Cog.prototype.init = function init(){
+
+
+    console.log('init me!', this);
+
+};
+
+
+
+Cog.prototype.loadBooks = function loadBooks(){
+
+    const urls = this.bookUrls = this.aliasContext.freshUrls(this.script.book);
+
+    if(urls.length){
+        this.scriptMonitor = new ScriptMonitor(urls, this.readBooks.bind(this));
+    } else {
+        this.loadTraits();
+    }
+
+};
+
+
+Cog.prototype.readBooks = function readBooks() {
+
+    const urls = this.bookUrls;
+
+    if(this.aliasContext.shared) // need a new context
+        this.aliasContext = this.aliasContext.clone();
+
+    for (let i = 0; i < urls.length; ++i) {
+
+        const url = urls[i];
+        const book = ScriptLoader.read(url);
+        if(book.__type !== 'book')
+            console.log('EXPECTED BOOK: got ', book.__type, book.__url);
+
+        this.aliasContext.injectAliasList(book.alias);
+
+    }
+
+    this.loadTraits();
+
+};
+
+
+Cog.prototype.loadTraits = function loadTraits(){
+
+    const urls = this.traitUrls = this.aliasContext.freshUrls(this.script.trait);
+
+    if(urls.length){
+        this.scriptMonitor = new ScriptMonitor(urls, this.init.bind(this));
+    } else {
+        this.init();
+    }
+
+};
+
+
+function toDir$2(url){
+
+    const i = url.lastIndexOf('/');
+    return url.substring(0, i + 1);
 
 }
 
 const Muta = {};
+const NOOP = function(){};
+
 Muta.PR = PathResolver;
 
-Muta.init = function init(el, path){
+Muta.init = function init(el, url){
 
-    return new App(el, path);
+    return new Cog(el, url);
 
 };
 
 Muta.cog = function cog(def){
 
     def.__type = 'cog';
+    def.pre = NOOP; //
+    def.init = NOOP;
+    def.ready = NOOP;
+    def.mount = NOOP;
+    def.destroy = NOOP;
     ScriptLoader.currentScript = def;
 
 };

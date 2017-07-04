@@ -1,5 +1,6 @@
 
 import PathResolver from './pathResolver.js';
+import ScriptLoader from './scriptLoader.js';
 
 // whenever new aliases or valves (limiting access to aliases) are encountered,
 // a new aliasContext is created and used to resolve files and directories.
@@ -12,29 +13,69 @@ import PathResolver from './pathResolver.js';
 //
 // (all method calls are cached here for performance reasons)
 
-const EMPTY = {};
-
-function AliasContext(sourceDir, aliasMap, valveMap, from){
-
-    const baseAliasMap = from // another base context
-        ? restrict(copy(from.aliasMap), from.valveMap)
-        : EMPTY;
+function AliasContext(sourceDir, aliasMap, valveMap){
 
     this.sourceDir = sourceDir;
-    this.aliasMap = copy(aliasMap, baseAliasMap);
-    this.valveMap = valveMap || EMPTY;
-    this.fileCache = {};
-    this.dirCache = {};
+    this.aliasMap = aliasMap ? restrict(copy(aliasMap), valveMap) : {};
+    this.fileCache = {}; // 2 level cache (first dir, then file)
+    this.dirCache = {}; // 2 level cache (first dir, then file)
+    this.shared = false; // shared once used by another lower cog
 
 }
 
-AliasContext.prototype.resolveFile = function resolveFile(url, base){
+AliasContext.prototype.clone = function(){
+    return new AliasContext(this.sourceDir, this.aliasMap);
+};
+
+
+AliasContext.prototype.restrictAliasList = function(valveMap){
+    this.aliasMap = restrict(this.aliasMap, valveMap);
+    return this;
+};
+
+AliasContext.prototype.injectAlias = function(alias){
+    this.aliasMap[alias.name] = this.resolveFile(alias.file, alias.dir);
+    return this;
+};
+
+AliasContext.prototype.injectAliasList = function(aliasList){
+    for(let i = 0; i < aliasList.length; i++){
+        this.injectAlias(aliasList[i]);
+    }
+    return this;
+};
+
+// given a list of objects with file and dir, get urls not yet downloaded
+
+AliasContext.prototype.freshUrls = function freshUrls(list) {
+
+    const result = [];
+
+    if(!list)
+        return result;
+
+    for(let i = 0; i < list.length; i++){
+        const url = this.itemToUrl(list[i]);
+        if(!ScriptLoader.has(url) && result.indexOf(url) === -1)
+            result.push(url);
+    }
+
+    return result;
+
+};
+
+AliasContext.prototype.itemToUrl = function applyUrl(item) {
+    return this.resolveFile(item.file, item.dir);
+};
+
+
+AliasContext.prototype.resolveFile = function resolveFile(file, dir){
 
     const cache = this.fileCache;
-    base = base || this.sourceDir || '';
-    const baseCache = cache[base] = cache[base] || {};
-    return baseCache[url] = baseCache[url] ||
-        PathResolver.resolveFile(this.aliasMap, url, base);
+    dir = dir || this.sourceDir || '';
+    const baseCache = cache[dir] = cache[dir] || {};
+    return baseCache[file] = baseCache[file] ||
+        PathResolver.resolveFile(this.aliasMap, file, dir);
 
 };
 

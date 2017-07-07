@@ -2,7 +2,6 @@ import Catbus from './catbus.es.js';
 import PathResolver from './pathResolver.js';
 import ScriptLoader from './scriptLoader.js';
 import ScriptMonitor from './scriptMonitor.js';
-import App from './app.js';
 import Cog from './cog.js';
 
 const Muta = {};
@@ -18,11 +17,12 @@ Muta.init = function init(el, url){
 
 Muta.cog = function cog(def){
 
-    def.__type = 'cog';
-    def.pre = NOOP; //
+    def.type = 'cog';
+    def.prep = NOOP; //
     def.init = NOOP;
     def.ready = NOOP;
     def.mount = NOOP;
+    def.start = NOOP;
     def.destroy = NOOP;
     ScriptLoader.currentScript = def;
 
@@ -30,14 +30,20 @@ Muta.cog = function cog(def){
 
 Muta.trait = function trait(def){
 
-    def.__type = 'trait';
+    def.type = 'trait';
+    def.prep = NOOP; //
+    def.init = NOOP;
+    def.ready = NOOP;
+    def.mount = NOOP;
+    def.start = NOOP;
+    def.destroy = NOOP;
     ScriptLoader.currentScript = def;
 
 };
 
 Muta.book = function book(def){
 
-    def.__type = 'book';
+    def.type = 'book';
     ScriptLoader.currentScript = def;
 
 };

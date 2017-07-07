@@ -16,6 +16,47 @@
     function ready(){
         console.log('got em!');
     }
+
+
+    class Point {
+        constructor(x, y) {
+            this.x = x;
+            this.y = y;
+
+        }
+
+        distance(other) {
+            const dx = Math.abs(this.x - other.x);
+            const dy = Math.abs(this.y - other.y);
+            return dx + dy;
+        }
+    }
+
+    function test() {
+        const points = [
+            new Point(10, 10),
+            new Point(1, 1),
+            new Point(8, 9)
+        ];
+        let result = 0;
+        for (let i = 0; i < 10000000; ++i) {
+            for (const point1 of points) {
+                for (const point2 of points) {
+                    result += point1.distance(point2);
+                }
+            }
+        }
+        return result;
+    }
+
+    for (let i = 1; i <= 5; ++i) {
+        console.time("test " + i);
+        test();
+        console.timeEnd("test " + i);
+    }
 </script>
+
+
+
 
 </html>

@@ -567,7 +567,7 @@ BatchStream.prototype.handle = function handle(msg, source, topic) {
 
     if(!this.latched){
         this.latched = true;
-        Catbus$1.enqueue(this);
+        Catbus.enqueue(this);
     }
 
 };
@@ -3271,17 +3271,17 @@ function push(stream, arr, len, name){
 
 NOOP_SOURCE.addStubs(ArraySource);
 
-const Catbus$1 = {};
+const Catbus = {};
 
 let _batchQueue = [];
 let _primed = false;
 
-Catbus$1.bus = function(){
+Catbus.bus = function(){
     return new Bus();
 };
 
 
-Catbus$1.fromInterval = function(name, delay, msg){
+Catbus.fromInterval = function(name, delay, msg){
 
     const bus = new Bus();
     const source = new IntervalSource(name, delay, msg);
@@ -3291,7 +3291,7 @@ Catbus$1.fromInterval = function(name, delay, msg){
 
 };
 
-Catbus$1.fromEvent = function(target, eventName, useCapture){
+Catbus.fromEvent = function(target, eventName, useCapture){
 
     const bus = new Bus();
     const source = new EventSource(eventName, target, eventName, useCapture);
@@ -3301,7 +3301,7 @@ Catbus$1.fromEvent = function(target, eventName, useCapture){
 
 };
 
-Catbus$1.fromValues = function(values){
+Catbus.fromValues = function(values){
 
     const bus = new Bus();
     const len = values.length;
@@ -3313,13 +3313,13 @@ Catbus$1.fromValues = function(values){
 
 };
 
-Catbus$1.fromArray = function(arr, name){
+Catbus.fromArray = function(arr, name){
 
-    return Catbus$1.fromValue(arr, name).split();
+    return Catbus.fromValue(arr, name).split();
 
 };
 
-Catbus$1.fromValue = function(value, name){
+Catbus.fromValue = function(value, name){
 
     const bus = new Bus();
     const source = new ValueSource(name || '', value);
@@ -3330,7 +3330,7 @@ Catbus$1.fromValue = function(value, name){
 };
 
 
-Catbus$1.fromSubscribe = function(name, data, topic){
+Catbus.fromSubscribe = function(name, data, topic){
 
     const bus = new Bus();
     const source = new SubscribeSource(name, data, topic, true);
@@ -3343,27 +3343,27 @@ Catbus$1.fromSubscribe = function(name, data, topic){
 
 // todo stable output queue -- output pools go in a queue that runs after the batch q is cleared, thus run once only
 
-Catbus$1.enqueue = function(pool){
+Catbus.enqueue = function(pool){
 
     _batchQueue.push(pool);
 
     if(!_primed) { // register to flush the queue
         _primed = true;
-        if (typeof window !== 'undefined' && window.requestAnimationFrame) requestAnimationFrame(Catbus$1.flush);
-        else process.nextTick(Catbus$1.flush);
+        if (typeof window !== 'undefined' && window.requestAnimationFrame) requestAnimationFrame(Catbus.flush);
+        else process.nextTick(Catbus.flush);
     }
 
 };
 
 
-Catbus$1.createChild = Catbus$1.scope = function(name){
+Catbus.createChild = Catbus.scope = function(name){
 
     return new Scope(name);
 
 };
 
 
-Catbus$1.flush = function(){
+Catbus.flush = function(){
 
     _primed = false;
 
@@ -3436,7 +3436,7 @@ const ScriptLoader = {};
 const status = { loaded: {}, failed: {}, fetched: {}};
 const cache = {};
 
-const listenersByFile = {}; // loaded only, use init timeouts to request again
+const listenersByUrl = {}; // loaded only, use init timeouts to request again
 
 
 function cleanup(e){
@@ -3470,20 +3470,20 @@ ScriptLoader.onLoad = function onLoad(e){
     status.loaded[src] = true;
 
     cache[src] = ScriptLoader.currentScript;
-    ScriptLoader.currentScript.__file = src;
-    ScriptLoader.currentScript.__dir = toDir$1(src);
+    ScriptLoader.currentScript.url = src;
+    ScriptLoader.currentScript.dir = toDir$1(src);
 
     console.log(cache);
     cleanup(e);
 
-    const listeners = listenersByFile[src] || [];
+    const listeners = listenersByUrl[src] || [];
     const len = listeners.length;
     for(let i = 0; i < len; ++i){
         const f = listeners[i];
         f.call(null, src);
     }
 
-    listenersByFile[src] = [];
+    listenersByUrl[src] = [];
 
 };
 
@@ -3500,7 +3500,7 @@ ScriptLoader.request = function request(path, callback){
     if(status.loaded[path])
         return callback.call(null, path);
 
-    const listeners = listenersByFile[path] = listenersByFile[path] || [];
+    const listeners = listenersByUrl[path] = listenersByUrl[path] || [];
     const i = listeners.indexOf(callback);
     if(i === -1){
         listeners.push(callback);
@@ -3644,6 +3644,9 @@ AliasContext.prototype.freshUrls = function freshUrls(list) {
 
 };
 
+
+
+
 AliasContext.prototype.itemToUrl = function applyUrl(item) {
     return this.resolveFile(item.file, item.dir);
 };
@@ -3700,9 +3703,10 @@ function copy(source, target){
 function Cog(el, url, config, parent){
 
     this.el = el;
-    this.parent = parent;
+    this.parent = parent || null;
+    this.scope = parent ? parent.scope.createChild() : Catbus.createChild();
     this.url = url;
-    this.dir = toDir$2(url);
+    this.dir = '';
     this.script = null;
     this.config = config || {};
     this.scriptMonitor = null;
@@ -3711,6 +3715,9 @@ function Cog(el, url, config, parent){
 
     this.bookUrls = null;
     this.traitUrls = null;
+
+    this.traitInstances = [];
+    this.buses = [];
 
     this.load();
 
@@ -3729,6 +3736,7 @@ Cog.prototype.load = function() {
 Cog.prototype.onScriptReady = function() {
 
     this.script = Object.create(ScriptLoader.read(this.url));
+    this.dir = this.script.dir;
     this.prep();
 
 };
@@ -3753,15 +3761,8 @@ Cog.prototype.prep = function(){
         this.aliasContext.injectAliasList(aliasList);
     }
 
-    this.script.prep && this.script.prep();
+    this.script.prep();
     this.loadBooks();
-
-};
-
-Cog.prototype.init = function init(){
-
-
-    console.log('init me!', this);
 
 };
 
@@ -3780,6 +3781,8 @@ Cog.prototype.loadBooks = function loadBooks(){
 };
 
 
+
+
 Cog.prototype.readBooks = function readBooks() {
 
     const urls = this.bookUrls;
@@ -3791,8 +3794,8 @@ Cog.prototype.readBooks = function readBooks() {
 
         const url = urls[i];
         const book = ScriptLoader.read(url);
-        if(book.__type !== 'book')
-            console.log('EXPECTED BOOK: got ', book.__type, book.__url);
+        if(book.type !== 'book')
+            console.log('EXPECTED BOOK: got ', book.type, book.url);
 
         this.aliasContext.injectAliasList(book.alias);
 
@@ -3816,12 +3819,71 @@ Cog.prototype.loadTraits = function loadTraits(){
 };
 
 
-function toDir$2(url){
+Cog.prototype.buildData = function buildData(){
 
-    const i = url.lastIndexOf('/');
-    return url.substring(0, i + 1);
+};
 
-}
+Cog.prototype.buildBus = function buildBus(){
+
+};
+
+Cog.prototype.buildTraits = function buildData(){
+
+};
+
+Cog.prototype.readyTraits = function readyTraits(){
+
+};
+
+Cog.prototype.mountTraits = function mountTraits(){
+
+};
+
+Cog.prototype.startTraits = function startTraits(){
+
+};
+
+Cog.prototype.init = function init(){
+
+    this.buildData();
+
+    this.script.init();
+
+    this.buildTraits();
+    this.buildBus();
+
+    this.ready();
+
+};
+
+
+Cog.prototype.ready = function ready(){
+
+    this.readyTraits();
+    this.script.ready();
+
+    this.mount();
+
+};
+
+
+Cog.prototype.mount = function mount(){
+
+    this.mountTraits();
+    this.script.ready();
+
+    this.start();
+
+};
+
+Cog.prototype.start = function start(){
+
+    console.log('start me!', this);
+
+    this.startTraits();
+    this.script.start();
+
+};
 
 const Muta = {};
 const NOOP = function(){};
@@ -3836,11 +3898,12 @@ Muta.init = function init(el, url){
 
 Muta.cog = function cog(def){
 
-    def.__type = 'cog';
-    def.pre = NOOP; //
+    def.type = 'cog';
+    def.prep = NOOP; //
     def.init = NOOP;
     def.ready = NOOP;
     def.mount = NOOP;
+    def.start = NOOP;
     def.destroy = NOOP;
     ScriptLoader.currentScript = def;
 
@@ -3848,14 +3911,20 @@ Muta.cog = function cog(def){
 
 Muta.trait = function trait(def){
 
-    def.__type = 'trait';
+    def.type = 'trait';
+    def.prep = NOOP; //
+    def.init = NOOP;
+    def.ready = NOOP;
+    def.mount = NOOP;
+    def.start = NOOP;
+    def.destroy = NOOP;
     ScriptLoader.currentScript = def;
 
 };
 
 Muta.book = function book(def){
 
-    def.__type = 'book';
+    def.type = 'book';
     ScriptLoader.currentScript = def;
 
 };

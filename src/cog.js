@@ -2,22 +2,28 @@
 import AliasContext from './aliasContext.js';
 import ScriptMonitor from './scriptMonitor.js';
 import ScriptLoader from './scriptLoader.js';
+import Catbus from './catbus.es.js';
 
 
-function Cog(el, url, config, parent){
+function Cog(url, config, parent){
 
-    this.el = el;
-    this.parent = parent;
+    this.elements = [];
+    this.children = [];
+    this.parent = parent || null;
+    this.scope = parent ? parent.scope.createChild() : Catbus.createChild();
     this.url = url;
-    this.dir = toDir(url);
+    this.dir = '';
     this.script = null;
     this.config = config || {};
     this.scriptMonitor = null;
-    this.valveMap = null;
+    this.aliasValveMap = null;
     this.aliasContext = null;
 
     this.bookUrls = null;
     this.traitUrls = null;
+
+    this.traitInstances = [];
+    this.buses = [];
 
     this.load();
 
@@ -36,6 +42,7 @@ Cog.prototype.load = function() {
 Cog.prototype.onScriptReady = function() {
 
     this.script = Object.create(ScriptLoader.read(this.url));
+    this.dir = this.script.dir;
     this.prep();
 
 };
@@ -44,10 +51,10 @@ Cog.prototype.onScriptReady = function() {
 Cog.prototype.prep = function(){
 
     const parent = this.parent;
-    const valveMap = parent ? parent.valveMap : null;
+    const aliasValveMap = parent ? parent.aliasValveMap : null;
     const aliasList = this.script.alias;
 
-    if(parent && parent.dir === this.dir && !aliasList && !valveMap){
+    if(parent && parent.dir === this.dir && !aliasList && !aliasValveMap){
         // same relative path, no new aliases and no valves, reuse parent context
         this.aliasContext = parent.aliasContext;
         this.aliasContext.shared = true;
@@ -56,19 +63,12 @@ Cog.prototype.prep = function(){
         this.aliasContext = parent
             ? parent.aliasContext.clone()
             : new AliasContext(this.dir); // root of application
-        this.aliasContext.restrictAliasList(valveMap);
+        this.aliasContext.restrictAliasList(aliasValveMap);
         this.aliasContext.injectAliasList(aliasList);
     }
 
-    this.script.prep && this.script.prep();
+    this.script.prep();
     this.loadBooks();
-
-};
-
-Cog.prototype.init = function init(){
-
-
-    console.log('init me!', this);
 
 };
 
@@ -87,6 +87,8 @@ Cog.prototype.loadBooks = function loadBooks(){
 };
 
 
+
+
 Cog.prototype.readBooks = function readBooks() {
 
     const urls = this.bookUrls;
@@ -98,8 +100,8 @@ Cog.prototype.readBooks = function readBooks() {
 
         const url = urls[i];
         const book = ScriptLoader.read(url);
-        if(book.__type !== 'book')
-            console.log('EXPECTED BOOK: got ', book.__type, book.__url);
+        if(book.type !== 'book')
+            console.log('EXPECTED BOOK: got ', book.type, book.url);
 
         this.aliasContext.injectAliasList(book.alias);
 
@@ -123,11 +125,70 @@ Cog.prototype.loadTraits = function loadTraits(){
 };
 
 
-function toDir(url){
+Cog.prototype.buildData = function buildData(){
 
-    const i = url.lastIndexOf('/');
-    return url.substring(0, i + 1);
+};
 
-}
+Cog.prototype.buildBus = function buildBus(){
+
+};
+
+Cog.prototype.buildTraits = function buildData(){
+
+};
+
+Cog.prototype.readyTraits = function readyTraits(){
+
+};
+
+Cog.prototype.mountTraits = function mountTraits(){
+
+};
+
+Cog.prototype.startTraits = function startTraits(){
+
+};
+
+Cog.prototype.init = function init(){
+
+    this.buildData();
+
+    this.script.init();
+
+    this.buildTraits();
+    this.buildBus();
+
+    this.ready();
+
+};
+
+
+Cog.prototype.ready = function ready(){
+
+    this.readyTraits();
+    this.script.ready();
+
+    this.mount();
+
+};
+
+
+Cog.prototype.mount = function mount(){
+
+    this.mountTraits();
+    this.script.ready();
+
+    this.start();
+
+};
+
+Cog.prototype.start = function start(){
+
+    console.log('start me!', this);
+
+    this.startTraits();
+    this.script.start();
+
+};
 
 export default Cog;

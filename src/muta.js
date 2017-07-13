@@ -11,32 +11,41 @@ Muta.PR = PathResolver;
 
 Muta.init = function init(el, url){
 
-    return new Cog(el, url);
+    return new Cog(url, el);
 
 };
+
+
+const defaultMethods = ['prep','init','mount','start','dismount','destroy'];
+
 
 Muta.cog = function cog(def){
 
     def.type = 'cog';
-    def.prep = NOOP; //
-    def.init = NOOP;
-    def.ready = NOOP;
-    def.mount = NOOP;
-    def.start = NOOP;
-    def.destroy = NOOP;
+    def.config = null;
+    def.api = null; // becomes an api connecting scripts and cogs and traits
+
+    for(let i = 0; i < defaultMethods.length; i++){
+        const name = defaultMethods[i];
+        def[name] = def[name] || NOOP;
+    }
+
     ScriptLoader.currentScript = def;
 
 };
 
+
 Muta.trait = function trait(def){
 
     def.type = 'trait';
-    def.prep = NOOP; //
-    def.init = NOOP;
-    def.ready = NOOP;
-    def.mount = NOOP;
-    def.start = NOOP;
-    def.destroy = NOOP;
+    def.config = null;
+    def.cog = null; // becomes cog script instance
+
+    for(let i = 0; i < defaultMethods.length; i++){
+        const name = defaultMethods[i];
+        def[name] = def[name] || NOOP;
+    }
+
     ScriptLoader.currentScript = def;
 
 };

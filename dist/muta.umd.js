@@ -3487,7 +3487,7 @@ ScriptLoader.onLoad = function onLoad(e){
 
 };
 
-ScriptLoader.read = function script(path){
+ScriptLoader.read = function read(path){
     return cache[path];
 };
 
@@ -3532,6 +3532,9 @@ function toDir$1(path){
     const i = path.lastIndexOf('/');
     return path.substring(0, i + 1);
 }
+
+// todo add ability to share this among cogs, add additional paths with new callback
+// thus entire trees can mount at once
 
 function ScriptMonitor(paths, callback){
 
@@ -3700,9 +3703,46 @@ function copy(source, target){
 
 }
 
-function Cog(el, url, config, parent){
+const pool = [];
 
-    this.el = el;
+function createPlaceholderDiv(){
+    const d = document.createElement('div');
+    d.style.display = 'none';
+    return d;
+}
+
+const Placeholder = {};
+
+Placeholder.take = function(){
+    return pool.length ? pool.shift() : createPlaceholderDiv();
+};
+
+Placeholder.give = function(el){
+    pool.push(el);
+    if(el.parentNode)
+        el.parentNode.removeChild(el);
+};
+
+function Trait(cog, def){
+
+    this.cog = cog;
+    this.config = def.config || {};
+    this.url = cog.aliasContext.resolveFile(def.file, def.dir);
+    this.script = Object.create(ScriptLoader.read(this.url));
+    this.script.cog = cog.script;
+    this.script.config = this.config;
+    this.script.api = cog.api;
+
+}
+
+function Cog(url, el, before, parent, config){
+
+    this.placeholder = null;
+    this.el = el; // ref element
+    this.before = !!before; // el appendChild or insertBefore
+    this.domElements = [];
+    this.namedElements = {};
+    this.children = [];
     this.parent = parent || null;
     this.scope = parent ? parent.scope.createChild() : Catbus.createChild();
     this.url = url;
@@ -3710,7 +3750,7 @@ function Cog(el, url, config, parent){
     this.script = null;
     this.config = config || {};
     this.scriptMonitor = null;
-    this.valveMap = null;
+    this.aliasValveMap = null;
     this.aliasContext = null;
 
     this.bookUrls = null;
@@ -3719,9 +3759,59 @@ function Cog(el, url, config, parent){
     this.traitInstances = [];
     this.buses = [];
 
+    this.usePlaceholder();
     this.load();
 
 }
+
+Cog.prototype.usePlaceholder = function() {
+
+    this.placeholder = Placeholder.take();
+
+    if(this.before){
+        this.el.parentNode.insertBefore(this.placeholder, this.el);
+    } else {
+        this.el.appendChild(this.placeholder);
+    }
+
+};
+
+Cog.prototype.killPlaceholder = function() {
+
+    if(!this.placeholder)
+        return;
+
+    Placeholder.give(this.placeholder);
+    this.placeholder = null;
+
+};
+
+
+Cog.prototype.mountDisplay = function() {
+
+    if(!this.script.display)
+        return;
+
+    let frag = document
+        .createRange()
+        .createContextualFragment(this.script.display);
+
+    const named = frag.querySelectorAll('[name]');
+    const len = named.length;
+    const hash = this.namedElements;
+
+    for(let i = 0; i < len; ++i){
+        const el = named[i];
+        hash[el.getAttribute('name')] = el;
+    }
+
+    this.elements = [].slice.call(frag.childNodes, 0);
+    this.placeholder.parentNode.insertBefore(frag, this.placeholder);
+
+    this.killPlaceholder();
+
+};
+
 
 Cog.prototype.load = function() {
 
@@ -3745,10 +3835,10 @@ Cog.prototype.onScriptReady = function() {
 Cog.prototype.prep = function(){
 
     const parent = this.parent;
-    const valveMap = parent ? parent.valveMap : null;
+    const aliasValveMap = parent ? parent.aliasValveMap : null;
     const aliasList = this.script.alias;
 
-    if(parent && parent.dir === this.dir && !aliasList && !valveMap){
+    if(parent && parent.dir === this.dir && !aliasList && !aliasValveMap){
         // same relative path, no new aliases and no valves, reuse parent context
         this.aliasContext = parent.aliasContext;
         this.aliasContext.shared = true;
@@ -3757,7 +3847,7 @@ Cog.prototype.prep = function(){
         this.aliasContext = parent
             ? parent.aliasContext.clone()
             : new AliasContext(this.dir); // root of application
-        this.aliasContext.restrictAliasList(valveMap);
+        this.aliasContext.restrictAliasList(aliasValveMap);
         this.aliasContext.injectAliasList(aliasList);
     }
 
@@ -3813,7 +3903,7 @@ Cog.prototype.loadTraits = function loadTraits(){
     if(urls.length){
         this.scriptMonitor = new ScriptMonitor(urls, this.init.bind(this));
     } else {
-        this.init();
+        this.build();
     }
 
 };
@@ -3827,52 +3917,82 @@ Cog.prototype.buildBus = function buildBus(){
 
 };
 
-Cog.prototype.buildTraits = function buildData(){
+Cog.prototype.buildCogs = function buildCogs(){
+
+    // build children -- virtual replace
 
 };
 
-Cog.prototype.readyTraits = function readyTraits(){
+Cog.prototype.buildTraits = function buildData(){
+
+    const traits = this.script.trait;
+    const instances = this.traitInstances;
+
+    const len = traits.length;
+    for(let i = 0; i < len; ++i){
+        const def = traits[i]; // todo path and root instead of file/dir?
+        const instance = new Trait(this, def);
+        instances.push(instance);
+        instance.script.prep();
+    }
+
+};
+
+
+Cog.prototype.initTraits = function initTraits(){
+
+    const traits = this.traitInstances;
+    const len = traits.length;
+    for(let i = 0; i < len; ++i){
+        const script = traits[i].script;
+        script.init();
+    }
 
 };
 
 Cog.prototype.mountTraits = function mountTraits(){
 
+    const traits = this.traitInstances;
+    const len = traits.length;
+    for(let i = 0; i < len; ++i){
+        const script = traits[i].script;
+        script.mount();
+    }
+
 };
 
 Cog.prototype.startTraits = function startTraits(){
 
+    const traits = this.traitInstances;
+    const len = traits.length;
+    for(let i = 0; i < len; ++i){
+        const script = traits[i].script;
+        script.start();
+    }
+
 };
 
-Cog.prototype.init = function init(){
+Cog.prototype.build = function build(){ // files loaded
 
+    // script.prep is called earlier
+    this.buildTraits(); // calls prep on all traits
     this.buildData();
 
     this.script.init();
-
-    this.buildTraits();
+    this.initTraits(); // calls init on all traits
     this.buildBus();
-
-    this.ready();
-
-};
-
-
-Cog.prototype.ready = function ready(){
-
-    this.readyTraits();
-    this.script.ready();
-
-    this.mount();
+    this.mount(); // mounts display, calls script.mount, then mount for all traits
+    this.buildCogs(); // placeholders for direct children, async loads possible
+    this.start(); // calls start for all traits
 
 };
 
 
 Cog.prototype.mount = function mount(){
 
+    this.mountDisplay();
+    this.script.mount();
     this.mountTraits();
-    this.script.ready();
-
-    this.start();
 
 };
 
@@ -3880,8 +4000,8 @@ Cog.prototype.start = function start(){
 
     console.log('start me!', this);
 
-    this.startTraits();
     this.script.start();
+    this.startTraits();
 
 };
 
@@ -3892,32 +4012,41 @@ Muta.PR = PathResolver;
 
 Muta.init = function init(el, url){
 
-    return new Cog(el, url);
+    return new Cog(url, el);
 
 };
+
+
+const defaultMethods = ['prep','init','mount','start','dismount','destroy'];
+
 
 Muta.cog = function cog(def){
 
     def.type = 'cog';
-    def.prep = NOOP; //
-    def.init = NOOP;
-    def.ready = NOOP;
-    def.mount = NOOP;
-    def.start = NOOP;
-    def.destroy = NOOP;
+    def.config = null;
+    def.api = null; // becomes an api connecting scripts and cogs and traits
+
+    for(let i = 0; i < defaultMethods.length; i++){
+        const name = defaultMethods[i];
+        def[name] = def[name] || NOOP;
+    }
+
     ScriptLoader.currentScript = def;
 
 };
 
+
 Muta.trait = function trait(def){
 
     def.type = 'trait';
-    def.prep = NOOP; //
-    def.init = NOOP;
-    def.ready = NOOP;
-    def.mount = NOOP;
-    def.start = NOOP;
-    def.destroy = NOOP;
+    def.config = null;
+    def.cog = null; // becomes cog script instance
+
+    for(let i = 0; i < defaultMethods.length; i++){
+        const name = defaultMethods[i];
+        def[name] = def[name] || NOOP;
+    }
+
     ScriptLoader.currentScript = def;
 
 };

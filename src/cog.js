@@ -2,12 +2,18 @@
 import AliasContext from './aliasContext.js';
 import ScriptMonitor from './scriptMonitor.js';
 import ScriptLoader from './scriptLoader.js';
+import Placeholder from './placeholder.js';
+import Trait from './trait.js';
 import Catbus from './catbus.es.js';
 
 
-function Cog(url, config, parent){
+function Cog(url, el, before, parent, config){
 
-    this.elements = [];
+    this.placeholder = null;
+    this.el = el; // ref element
+    this.before = !!before; // el appendChild or insertBefore
+    this.domElements = [];
+    this.namedElements = {};
     this.children = [];
     this.parent = parent || null;
     this.scope = parent ? parent.scope.createChild() : Catbus.createChild();
@@ -25,9 +31,59 @@ function Cog(url, config, parent){
     this.traitInstances = [];
     this.buses = [];
 
+    this.usePlaceholder();
     this.load();
 
 }
+
+Cog.prototype.usePlaceholder = function() {
+
+    this.placeholder = Placeholder.take();
+
+    if(this.before){
+        this.el.parentNode.insertBefore(this.placeholder, this.el);
+    } else {
+        this.el.appendChild(this.placeholder);
+    }
+
+};
+
+Cog.prototype.killPlaceholder = function() {
+
+    if(!this.placeholder)
+        return;
+
+    Placeholder.give(this.placeholder);
+    this.placeholder = null;
+
+};
+
+
+Cog.prototype.mountDisplay = function() {
+
+    if(!this.script.display)
+        return;
+
+    let frag = document
+        .createRange()
+        .createContextualFragment(this.script.display);
+
+    const named = frag.querySelectorAll('[name]');
+    const len = named.length;
+    const hash = this.namedElements;
+
+    for(let i = 0; i < len; ++i){
+        const el = named[i];
+        hash[el.getAttribute('name')] = el;
+    }
+
+    this.elements = [].slice.call(frag.childNodes, 0);
+    this.placeholder.parentNode.insertBefore(frag, this.placeholder);
+
+    this.killPlaceholder();
+
+};
+
 
 Cog.prototype.load = function() {
 
@@ -119,7 +175,7 @@ Cog.prototype.loadTraits = function loadTraits(){
     if(urls.length){
         this.scriptMonitor = new ScriptMonitor(urls, this.init.bind(this));
     } else {
-        this.init();
+        this.build();
     }
 
 };
@@ -133,52 +189,82 @@ Cog.prototype.buildBus = function buildBus(){
 
 };
 
-Cog.prototype.buildTraits = function buildData(){
+Cog.prototype.buildCogs = function buildCogs(){
+
+    // build children -- virtual replace
 
 };
 
-Cog.prototype.readyTraits = function readyTraits(){
+Cog.prototype.buildTraits = function buildData(){
+
+    const traits = this.script.trait;
+    const instances = this.traitInstances;
+
+    const len = traits.length;
+    for(let i = 0; i < len; ++i){
+        const def = traits[i]; // todo path and root instead of file/dir?
+        const instance = new Trait(this, def);
+        instances.push(instance);
+        instance.script.prep();
+    }
+
+};
+
+
+Cog.prototype.initTraits = function initTraits(){
+
+    const traits = this.traitInstances;
+    const len = traits.length;
+    for(let i = 0; i < len; ++i){
+        const script = traits[i].script;
+        script.init();
+    }
 
 };
 
 Cog.prototype.mountTraits = function mountTraits(){
 
+    const traits = this.traitInstances;
+    const len = traits.length;
+    for(let i = 0; i < len; ++i){
+        const script = traits[i].script;
+        script.mount();
+    }
+
 };
 
 Cog.prototype.startTraits = function startTraits(){
 
+    const traits = this.traitInstances;
+    const len = traits.length;
+    for(let i = 0; i < len; ++i){
+        const script = traits[i].script;
+        script.start();
+    }
+
 };
 
-Cog.prototype.init = function init(){
+Cog.prototype.build = function build(){ // files loaded
 
+    // script.prep is called earlier
+    this.buildTraits(); // calls prep on all traits
     this.buildData();
 
     this.script.init();
-
-    this.buildTraits();
+    this.initTraits(); // calls init on all traits
     this.buildBus();
-
-    this.ready();
-
-};
-
-
-Cog.prototype.ready = function ready(){
-
-    this.readyTraits();
-    this.script.ready();
-
-    this.mount();
+    this.mount(); // mounts display, calls script.mount, then mount for all traits
+    this.buildCogs(); // placeholders for direct children, async loads possible
+    this.start(); // calls start for all traits
 
 };
 
 
 Cog.prototype.mount = function mount(){
 
+    this.mountDisplay();
+    this.script.mount();
     this.mountTraits();
-    this.script.ready();
-
-    this.start();
 
 };
 
@@ -186,8 +272,8 @@ Cog.prototype.start = function start(){
 
     console.log('start me!', this);
 
-    this.startTraits();
     this.script.start();
+    this.startTraits();
 
 };
 

@@ -3,15 +3,20 @@
 <head>
     <script src="./js/muta.umd.js" ></script>
 </head>
+<body>
+
+<div id="moo"></div>
 
 <script>
+
+    const moo = document.querySelectorAll('#moo')[0];
 
     const paths = ['./js/test.js','./js/test3.js','./js/test2.js'];
     const fullPaths = paths.map(function(p){ return Muta.PR.resolveFile(null,p);});
 
     Muta.getScriptMonitor(fullPaths, ready);
 
-    Muta.init('cow', fullPaths[0]);
+    Muta.init(moo,  fullPaths[0]);
 
     function ready(){
         console.log('got em!');
@@ -22,5 +27,6 @@
 
 
 
+</body>
 
 </html>

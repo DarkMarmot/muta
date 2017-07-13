@@ -56,7 +56,7 @@ ScriptLoader.onLoad = function onLoad(e){
 
 };
 
-ScriptLoader.read = function script(path){
+ScriptLoader.read = function read(path){
     return cache[path];
 };
 

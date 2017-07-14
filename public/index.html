@@ -9,19 +9,7 @@
 
 <script>
 
-    const moo = document.querySelectorAll('#moo')[0];
-
-    const paths = ['./js/test.js','./js/test3.js','./js/test2.js'];
-    const fullPaths = paths.map(function(p){ return Muta.PR.resolveFile(null,p);});
-
-    Muta.getScriptMonitor(fullPaths, ready);
-
-    Muta.init(moo,  fullPaths[0]);
-
-    function ready(){
-        console.log('got em!');
-    }
-
+    Muta.init(document.querySelector('#moo'),  './js/test.js');
 
 </script>
 

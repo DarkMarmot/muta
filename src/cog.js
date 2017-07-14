@@ -40,10 +40,15 @@ Cog.prototype.usePlaceholder = function() {
 
     this.placeholder = Placeholder.take();
 
-    if(this.before){
-        this.el.parentNode.insertBefore(this.placeholder, this.el);
+    if(this.el) {
+        if (this.before) {
+            this.el.parentNode.insertBefore(this.placeholder, this.el);
+        } else {
+            this.el.appendChild(this.placeholder);
+        }
     } else {
-        this.el.appendChild(this.placeholder);
+        this.parent.placeholder.parentNode
+            .insertBefore(this.placeholder, this.parent.placeholder);
     }
 
 };
@@ -80,7 +85,6 @@ Cog.prototype.mountDisplay = function() {
     this.elements = [].slice.call(frag.childNodes, 0);
     this.placeholder.parentNode.insertBefore(frag, this.placeholder);
 
-    this.killPlaceholder();
 
 };
 
@@ -132,7 +136,7 @@ Cog.prototype.prep = function(){
 
 Cog.prototype.loadBooks = function loadBooks(){
 
-    const urls = this.bookUrls = this.aliasContext.freshUrls(this.script.book);
+    const urls = this.bookUrls = this.aliasContext.freshUrls(this.script.books);
 
     if(urls.length){
         this.scriptMonitor = new ScriptMonitor(urls, this.readBooks.bind(this));
@@ -170,10 +174,10 @@ Cog.prototype.readBooks = function readBooks() {
 
 Cog.prototype.loadTraits = function loadTraits(){
 
-    const urls = this.traitUrls = this.aliasContext.freshUrls(this.script.trait);
+    const urls = this.traitUrls = this.aliasContext.freshUrls(this.script.traits);
 
     if(urls.length){
-        this.scriptMonitor = new ScriptMonitor(urls, this.init.bind(this));
+        this.scriptMonitor = new ScriptMonitor(urls, this.build.bind(this));
     } else {
         this.build();
     }
@@ -191,13 +195,40 @@ Cog.prototype.buildBus = function buildBus(){
 
 Cog.prototype.buildCogs = function buildCogs(){
 
-    // build children -- virtual replace
+    const cogs = this.script.cogs;
+    const children = this.children;
+    const aliasContext = this.aliasContext;
+
+    const len = cogs.length;
+    for(let i = 0; i < len; ++i){
+        const def = cogs[i];
+        const url = aliasContext.resolveFile(def.file, def.dir);
+        const el = this.getNamedElement(def.el);
+        const before = !!(el && def.before);
+        const cog = new Cog(url, el, before, this, def.config);
+        children.push(cog);
+
+    }
+
+};
+
+Cog.prototype.getNamedElement = function getNamedElement(name){
+
+    if(!name)
+        return null;
+
+    const el = this.namedElements[name];
+
+    if(!el)
+        throw new Error('Named element ' + name + ' not found in display!');
+
+    return el;
 
 };
 
 Cog.prototype.buildTraits = function buildData(){
 
-    const traits = this.script.trait;
+    const traits = this.script.traits;
     const instances = this.traitInstances;
 
     const len = traits.length;
@@ -255,6 +286,7 @@ Cog.prototype.build = function build(){ // files loaded
     this.buildBus();
     this.mount(); // mounts display, calls script.mount, then mount for all traits
     this.buildCogs(); // placeholders for direct children, async loads possible
+    this.killPlaceholder();
     this.start(); // calls start for all traits
 
 };

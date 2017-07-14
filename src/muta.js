@@ -11,19 +11,27 @@ Muta.PR = PathResolver;
 
 Muta.init = function init(el, url){
 
+    url = PathResolver.resolveFile(null, url);
     return new Cog(url, el);
 
 };
 
-
 const defaultMethods = ['prep','init','mount','start','dismount','destroy'];
 
+const defaultCogProps = {
+    type: 'cog',
+    config: null,
+    api: null,
+    cogs: [],
+    traits: [],
+    books: []
+};
 
 Muta.cog = function cog(def){
 
-    def.type = 'cog';
-    def.config = null;
-    def.api = null; // becomes an api connecting scripts and cogs and traits
+    for(const prop in defaultCogProps){
+        def[prop] = def.hasOwnProperty(prop) ? def[prop] : defaultCogProps[prop];
+    }
 
     for(let i = 0; i < defaultMethods.length; i++){
         const name = defaultMethods[i];

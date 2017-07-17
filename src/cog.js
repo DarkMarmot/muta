@@ -76,10 +76,13 @@ Cog.prototype.mountDisplay = function() {
     const named = frag.querySelectorAll('[name]');
     const len = named.length;
     const hash = this.namedElements;
+    const scriptEls = this.script.els;
 
     for(let i = 0; i < len; ++i){
         const el = named[i];
-        hash[el.getAttribute('name')] = el;
+        const name = el.getAttribute('name');
+        hash[name] = el;
+        scriptEls[name] = el;
     }
 
     this.elements = [].slice.call(frag.childNodes, 0);
@@ -201,6 +204,7 @@ Cog.prototype.buildCogs = function buildCogs(){
 
     const len = cogs.length;
     for(let i = 0; i < len; ++i){
+
         const def = cogs[i];
         const url = aliasContext.resolveFile(def.file, def.dir);
         const el = this.getNamedElement(def.el);

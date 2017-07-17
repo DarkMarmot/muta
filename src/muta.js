@@ -7,7 +7,6 @@ import Cog from './cog.js';
 const Muta = {};
 const NOOP = function(){};
 
-Muta.PR = PathResolver;
 
 Muta.init = function init(el, url){
 
@@ -24,7 +23,8 @@ const defaultCogProps = {
     api: null,
     cogs: [],
     traits: [],
-    books: []
+    books: [],
+    els: {}
 };
 
 Muta.cog = function cog(def){

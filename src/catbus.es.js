@@ -450,19 +450,12 @@ function SubscribeSource(name, data, topic, canPull){
 
 }
 
-function tryEmit(source){
-    try{
-        source.emit();
-    } catch(e){
-    }
-}
 
 SubscribeSource.prototype.pull = function pull(){
 
-    !this.dead && this.canPull && tryEmit(this);
+    !this.dead && this.canPull && this.emit();
 
 };
-
 
 
 SubscribeSource.prototype.emit = function emit(){
@@ -631,10 +624,11 @@ NOOP_STREAM.addStubs(TapStream);
 function IDENTITY$2(msg, source, topic) { return msg; }
 
 
-function MsgStream(name, f) {
+function MsgStream(name, f, context) {
 
     this.name = name;
     this.f = f || IDENTITY$2;
+    this.context = context;
     this.next = NOOP_STREAM;
 
 }
@@ -643,7 +637,7 @@ function MsgStream(name, f) {
 MsgStream.prototype.handle = function msgHandle(msg, source, topic) {
 
     const f = this.f;
-    this.next.handle(f(msg, source, topic), source, topic);
+    this.next.handle(f.call(this.context, msg, source, topic), source, topic);
 
 };
 
@@ -1054,6 +1048,39 @@ FilterMapStream.prototype.handle = function filterHandle(msg, source, topic) {
 };
 
 NOOP_STREAM.addStubs(FilterMapStream);
+
+function PriorStream(name) {
+
+    this.name = name;
+    this.values = [];
+    this.next = NOOP_STREAM;
+
+}
+
+PriorStream.prototype.handle = function handle(msg, source, topic) {
+
+    const arr = this.values;
+
+    arr.push(msg);
+
+    if(arr.length === 1)
+        return;
+
+    if(arr.length > 2)
+        arr.shift();
+
+    this.next.handle(arr[0], source, topic);
+
+};
+
+PriorStream.prototype.reset = function(msg, source, topic){
+
+    this.msg = [];
+    this.next.reset();
+
+};
+
+NOOP_STREAM.addStubs(PriorStream);
 
 function FUNCTOR$4(d) {
     return typeof d === 'function' ? d : function() { return d; };
@@ -1897,7 +1924,7 @@ function getDoMsgExtract(word) {
 }
 
 
-function applyReaction(scope, bus, phrase, target) { // target is some event emitter
+function applyReaction(scope, bus, phrase, target, lookup) { // target is some event emitter
 
     const need = [];
     const skipDupes = [];
@@ -2018,7 +2045,7 @@ function applyMethod(bus, word) {
 
 }
 
-function applyProcess(scope, bus, phrase, context, node) {
+function applyProcess(scope, bus, phrase, context, node, lookup) {
 
     const operation = phrase[0].operation; // same for all words in a process phrase
 
@@ -2035,9 +2062,9 @@ function applyProcess(scope, bus, phrase, context, node) {
     } else if (operation === 'METHOD') {
         applyMethod(bus, phrase[0]);
     } else if (operation === 'FILTER') {
-        applyFilterProcess(bus, phrase, context);
+        applyFilterProcess(bus, phrase, context, lookup);
     } else if (operation === 'RUN') {
-        applyMsgProcess(bus, phrase, context);
+        applyMsgProcess(bus, phrase, context, lookup);
     } else if (operation === 'ALIAS') {
         applySourceProcess(bus, phrase[0]);
     } else if (operation === 'WRITE') {
@@ -2059,15 +2086,16 @@ function applyWriteProcess(bus, scope, word){
 
 }
 
-function applyMsgProcess(bus, phrase, context){
+function applyMsgProcess(bus, phrase, context, lookup){
 
     const len = phrase.length;
+    lookup = lookup || context;
 
     for(let i = 0; i < len; i++) {
 
         const word = phrase[i];
         const name = word.name;
-        const method = context[name];
+        const method = lookup[name];
 
         bus.msg(method, context);
 
@@ -2086,15 +2114,16 @@ function applySourceProcess(bus, word){
 }
 
 
-function applyFilterProcess(bus, phrase, context){
+function applyFilterProcess(bus, phrase, context, lookup){
 
     const len = phrase.length;
+    lookup = lookup || context;
 
     for(let i = 0; i < len; i++) {
 
         const word = phrase[i];
         const name = word.name;
-        const method = context[name];
+        const method = lookup[name];
 
         bus.filter(method, context);
 
@@ -2102,14 +2131,14 @@ function applyFilterProcess(bus, phrase, context){
 
 }
 
-function createBus(nyan, scope, context, target){
+function createBus(nyan, scope, context, target, lookup){
 
     let bus = new Bus(scope);
-    return applyNyan(nyan, bus, context, target);
+    return applyNyan(nyan, bus, context, target, lookup);
 
 }
 
-function applyNyan(nyan, bus, context, target){
+function applyNyan(nyan, bus, context, target, lookup){
 
     const len = nyan.length;
     const scope = bus.scope;
@@ -2132,9 +2161,9 @@ function applyNyan(nyan, bus, context, target){
         } else {
 
             if(name === 'PROCESS')
-                applyProcess(scope, bus, phrase, context, target);
+                applyProcess(scope, bus, phrase, context, target, lookup);
             else // name === 'REACT'
-                applyReaction(scope, bus, phrase, target);
+                applyReaction(scope, bus, phrase, target, lookup);
 
         }
     }
@@ -2170,15 +2199,15 @@ const tapStreamBuilder = function(f) {
     }
 };
 
-const msgStreamBuilder = function(f) {
+const msgStreamBuilder = function(f, context) {
     return function(name) {
-        return new MsgStream(name, f);
+        return new MsgStream(name, f, context);
     }
 };
 
-const filterStreamBuilder = function(f) {
+const filterStreamBuilder = function(f, context) {
     return function(name) {
-        return new FilterStream(name, f);
+        return new FilterStream(name, f, context);
     }
 };
 
@@ -2191,6 +2220,12 @@ const skipStreamBuilder = function(f) {
 const lastNStreamBuilder = function(count) {
     return function(name) {
         return new LastNStream(name, count);
+    }
+};
+
+const priorStreamBuilder = function() {
+    return function(name) {
+        return new PriorStream(name);
     }
 };
 
@@ -2287,7 +2322,6 @@ class Bus {
         this._parent = null;
 
         // temporary api states (used for interactively building the bus)
-
 
         this._spork = null; // beginning frame of split sub process
         this._holding = false; // multiple commands until duration function
@@ -2486,13 +2520,22 @@ class Bus {
 
     };
 
+    fuse(bus) {
+
+        this.add(bus);
+        this.merge();
+        this.group();
+
+        return this;
+    };
+
     join() {
 
         const parent = this.back();
         parent.add(this);
         return parent;
 
-    }
+    };
 
     add(bus) {
 
@@ -2645,6 +2688,14 @@ class Bus {
         return this;
     };
 
+
+    prior() {
+
+        this._createNormalFrame(priorStreamBuilder());
+        return this;
+
+    };
+
     run(f) {
 
         this._ASSERT_IS_FUNCTION(f);
@@ -2661,11 +2712,11 @@ class Bus {
 
     };
 
-    msg(fAny) {
+    msg(fAny, context) {
 
         const f = FUNCTOR(fAny);
 
-        this._createNormalFrame(msgStreamBuilder(f));
+        this._createNormalFrame(msgStreamBuilder(f, context));
         return this;
 
 
@@ -2692,12 +2743,12 @@ class Bus {
 
     };
 
-    filter(f) {
+    filter(f, context) {
 
         this._ASSERT_IS_FUNCTION(f);
         this._ASSERT_NOT_HOLDING();
 
-        this._createNormalFrame(filterStreamBuilder(f));
+        this._createNormalFrame(filterStreamBuilder(f, context));
         return this;
 
 
@@ -2740,7 +2791,7 @@ class Bus {
 
     addEvent(name, target, eventName, useCapture){
 
-        const source = new EventSource(name, target, eventName, useCapture);
+        const source = new EventSource(name, target, eventName || name, useCapture);
         this.addSource(source);
 
         return this;
@@ -2809,14 +2860,13 @@ class Scope{
 
     };
 
-    bus(strOrNyan, context, node){
+    bus(strOrNyan, context, node, lookup){
 
         if(!strOrNyan)
             return new Bus(this);
 
         const nyan = (typeof strOrNyan === 'string') ? Nyan.parse(strOrNyan) : strOrNyan;
-        console.log(nyan);
-        return NyanRunner.createBus(nyan, this, context, node);
+        return NyanRunner.createBus(nyan, this, context, node, lookup);
 
     };
 
@@ -3221,7 +3271,7 @@ function ValueSource(name, value){
 
 }
 
-function tryEmit$1(source){
+function tryEmit(source){
     try{
         source.emit();
     } catch(e){
@@ -3230,7 +3280,7 @@ function tryEmit$1(source){
 
 ValueSource.prototype.pull = function pull(){
 
-    tryEmit$1(this);
+    tryEmit(this);
 
 };
 

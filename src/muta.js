@@ -18,13 +18,20 @@ Muta.init = function init(el, url){
 const defaultMethods = ['prep','init','mount','start','dismount','destroy'];
 
 const defaultCogProps = {
+
     type: 'cog',
     config: null,
     api: null,
     cogs: [],
     traits: [],
+    states: {}, // by state name
+    actions: {}, // by action name
+    events: {}, // by el name
+    buses: [],
     books: [],
+    methods: {},
     els: {}
+
 };
 
 Muta.cog = function cog(def){

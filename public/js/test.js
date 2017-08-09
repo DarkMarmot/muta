@@ -1,30 +1,56 @@
 
 Muta.cog({
 
-    test1: 'rock!',
-
-    display: '<div name="bunny" style="background: red; color: white; padding: 10px;">moo dog win!</div>',
-
-    init: function(){
-       console.log('moo!');
-    },
+    display: '<div name="bunny" style="background: #6b543c; color: #ffdf88; padding: 10px;">moo dog win!</div>',
 
     alias: [
         {name: 'ROOT', file: './'}
     ],
 
     cogs: [
-        {file: 'cow.js', el: 'bunny'},
+
+        {file: 'cow.js', el: 'bunny', put: 'after'},
         {file: 'dog.js', el: 'bunny'},
         {file: 'dog.js', config: {say: 'puppy'}}
+
     ],
 
     books: [
         {file: 'meow.js'}
     ],
 
+    states: {
+        puppy: 5,
+        kitty: 'whiskers',
+        gar: 19
+    },
+
+    actions: {
+        'meow_cmd': true // bus: '',
+    },
+
+
+
+    events: {
+      bunny: '@click | =meow_cmd'
+    },
+
+    buses: [
+        '^meow_cmd | gar | *add1 | =gar',
+        'puppy | =gar',
+        'gar | *hop'
+    ],
+
     traits: [
         {file: 'test2.js', config: { meow: 'i do meow!'}}
-    ]
+    ],
+
+    methods: {
+        hop: function(msg){ console.log('method hop - ', msg, this);},
+        add1: function(n){
+            console.log('ADD');
+            return n + 1;
+        }
+    }
 
 });

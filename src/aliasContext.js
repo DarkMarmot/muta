@@ -3,28 +3,28 @@ import PathResolver from './pathResolver.js';
 import ScriptLoader from './scriptLoader.js';
 
 // whenever new aliases or valves (limiting access to aliases) are encountered,
-// a new aliasContext is created and used to resolve files and directories.
+// a new aliasContext is created and used to resolve urls and directories.
 // it inherits the aliases from above and then extends or limits those.
 //
-// the resolveFile and resolveDir methods determine a path from a file and/or
+// the resolveUrl and resolveRoot methods determine a path from a url and/or
 // directory combination (either can be an alias). if no directory is
-// given -- and the file or alias is not an absolute path -- then a relative path
-// is generated from the current file (returning a new absolute path).
+// given -- and the url or alias is not an absolute path -- then a relative path
+// is generated from the current url (returning a new absolute path).
 //
 // (all method calls are cached here for performance reasons)
 
-function AliasContext(sourceDir, aliasMap, valveMap){
+function AliasContext(sourceRoot, aliasMap, valveMap){
 
-    this.sourceDir = sourceDir;
+    this.sourceRoot = sourceRoot;
     this.aliasMap = aliasMap ? restrict(copy(aliasMap), valveMap) : {};
-    this.fileCache = {}; // 2 level cache (first dir, then file)
-    this.dirCache = {}; // 2 level cache (first dir, then file)
+    this.urlCache = {}; // 2 level cache (first root, then url)
+    this.rootCache = {}; // 2 level cache (first root, then url)
     this.shared = false; // shared once used by another lower cog
 
 }
 
 AliasContext.prototype.clone = function(){
-    return new AliasContext(this.sourceDir, this.aliasMap);
+    return new AliasContext(this.sourceRoot, this.aliasMap);
 };
 
 
@@ -34,7 +34,7 @@ AliasContext.prototype.restrictAliasList = function(valveMap){
 };
 
 AliasContext.prototype.injectAlias = function(alias){
-    this.aliasMap[alias.name] = this.resolveFile(alias.file, alias.dir);
+    this.aliasMap[alias.name] = this.resolveUrl(alias.url, alias.root);
     return this;
 };
 
@@ -45,7 +45,7 @@ AliasContext.prototype.injectAliasList = function(aliasList){
     return this;
 };
 
-// given a list of objects with file and dir, get urls not yet downloaded
+// given a list of objects with url and root, get urls not yet downloaded
 
 AliasContext.prototype.freshUrls = function freshUrls(list) {
 
@@ -68,27 +68,27 @@ AliasContext.prototype.freshUrls = function freshUrls(list) {
 
 
 AliasContext.prototype.itemToUrl = function applyUrl(item) {
-    return this.resolveFile(item.file, item.dir);
+    return this.resolveUrl(item.url, item.root);
 };
 
 
-AliasContext.prototype.resolveFile = function resolveFile(file, dir){
+AliasContext.prototype.resolveUrl = function resolveUrl(url, root){
 
-    const cache = this.fileCache;
-    dir = dir || this.sourceDir || '';
-    const baseCache = cache[dir] = cache[dir] || {};
-    return baseCache[file] = baseCache[file] ||
-        PathResolver.resolveFile(this.aliasMap, file, dir);
+    const cache = this.urlCache;
+    root = root || this.sourceRoot || '';
+    const baseCache = cache[root] = cache[root] || {};
+    return baseCache[url] = baseCache[url] ||
+        PathResolver.resolveUrl(this.aliasMap, url, root);
 
 };
 
-AliasContext.prototype.resolveDir = function resolveDir(url, base){
+AliasContext.prototype.resolveRoot = function resolveRoot(url, base){
 
-    const cache = this.dirCache;
-    base = base || this.sourceDir || '';
+    const cache = this.rootCache;
+    base = base || this.sourceRoot || '';
     const baseCache = cache[base] = cache[base] || {};
     return baseCache[url] = baseCache[url] ||
-        PathResolver.resolveDir(this.aliasMap, url, base);
+        PathResolver.resolveRoot(this.aliasMap, url, base);
 
 };
 

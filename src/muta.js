@@ -10,7 +10,7 @@ const NOOP = function(){};
 
 Muta.init = function init(el, url){
 
-    url = PathResolver.resolveFile(null, url);
+    url = PathResolver.resolveUrl(null, url);
     return new Cog(url, el);
 
 };

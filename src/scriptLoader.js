@@ -40,7 +40,7 @@ ScriptLoader.onLoad = function onLoad(e){
 
     cache[src] = ScriptLoader.currentScript;
     ScriptLoader.currentScript.url = src;
-    ScriptLoader.currentScript.dir = toDir(src);
+    ScriptLoader.currentScript.root = toRoot(src);
 
     console.log(cache);
     cleanup(e);
@@ -97,7 +97,7 @@ ScriptLoader.load = function(path){
 
 };
 
-function toDir(path){
+function toRoot(path){
     const i = path.lastIndexOf('/');
     return path.substring(0, i + 1);
 }

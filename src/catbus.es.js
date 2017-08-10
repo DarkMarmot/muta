@@ -160,6 +160,9 @@ class Data {
 
         type = type || DATA_TYPES.NONE;
 
+        if(!name)
+            throw new Error('Data requires a name');
+
         if(!isValid(type))
             throw new Error('Invalid Data of type: ' + type);
 
@@ -167,6 +170,7 @@ class Data {
         this._name       = name;
         this._type       = type;
         this._dead       = false;
+        this._local      = name[0] === '_';
 
         this._noTopicList = new SubscriberList('', this);
         this._wildcardSubscriberList = new SubscriberList('', this);
@@ -2834,6 +2838,9 @@ function _destroyEach(arr){
 
 }
 
+function isPrivate(name){
+    return name[0] === '_';
+}
 
 class Scope{
 
@@ -3085,8 +3092,12 @@ class Scope{
     find(name, required){
 
         const localData = this.grab(name);
+
         if(localData)
             return localData;
+
+        if(isPrivate(name))
+            return null;
 
         let scope = this;
 
@@ -3120,8 +3131,12 @@ class Scope{
 
     findOuter(name, required){
 
+        if(isPrivate(name))
+            return null;
+
         let foundInner = false;
         const localData = this.grab(name);
+
         if(localData)
             foundInner = true;
 

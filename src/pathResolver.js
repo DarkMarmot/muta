@@ -1,39 +1,39 @@
 
 // the PathResolver is a namespace that uses a browser hack to generate an
 // absolute path from a url string -- using an anchor tag's href.
-// it combines the aliasMap with a file and possible base directory.
+// it combines the aliasMap with a url and possible root directory.
 
 
 const PathResolver = {};
 const ANCHOR = document.createElement('a');
 
 
-PathResolver.resolveFile = function resolveFile(aliasMap, file, dir) {
+PathResolver.resolveUrl = function resolveUrl(aliasMap, url, root) {
 
-    file = aliasMap ? (aliasMap[file] || file) : file;
+    url = aliasMap ? (aliasMap[url] || url) : url;
 
-    if(dir && file.indexOf('http') !== 0)  {
+    if(root && url.indexOf('http') !== 0)  {
 
-            dir = aliasMap ? (aliasMap[dir] || dir) : dir;
-            const lastChar = dir.substr(-1);
-            file = (lastChar !== '/') ? dir + '/' + file : dir + file;
+            root = aliasMap ? (aliasMap[root] || root) : root;
+            const lastChar = root.substr(-1);
+            url = (lastChar !== '/') ? root + '/' + url : root + url;
 
     }
 
-    ANCHOR.href = file;
+    ANCHOR.href = url;
     return ANCHOR.href;
 
 };
 
 
-PathResolver.resolveDir = function resolveDir(aliasMap, file, dir){
+PathResolver.resolveRoot = function resolveRoot(aliasMap, url, root){
 
-    return toDir(PathResolver.resolveFile(aliasMap, file, dir));
+    return toRoot(PathResolver.resolveUrl(aliasMap, url, root));
 
 };
 
 
-function toDir(path){
+function toRoot(path){
 
     const i = path.lastIndexOf('/');
     return path.substring(0, i + 1);

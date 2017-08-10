@@ -166,6 +166,9 @@ class Data {
 
         type = type || DATA_TYPES.NONE;
 
+        if(!name)
+            throw new Error('Data requires a name');
+
         if(!isValid(type))
             throw new Error('Invalid Data of type: ' + type);
 
@@ -173,6 +176,7 @@ class Data {
         this._name       = name;
         this._type       = type;
         this._dead       = false;
+        this._local      = name[0] === '_';
 
         this._noTopicList = new SubscriberList('', this);
         this._wildcardSubscriberList = new SubscriberList('', this);
@@ -2840,6 +2844,9 @@ function _destroyEach(arr){
 
 }
 
+function isPrivate(name){
+    return name[0] === '_';
+}
 
 class Scope{
 
@@ -3091,8 +3098,12 @@ class Scope{
     find(name, required){
 
         const localData = this.grab(name);
+
         if(localData)
             return localData;
+
+        if(isPrivate(name))
+            return null;
 
         let scope = this;
 
@@ -3126,8 +3137,12 @@ class Scope{
 
     findOuter(name, required){
 
+        if(isPrivate(name))
+            return null;
+
         let foundInner = false;
         const localData = this.grab(name);
+
         if(localData)
             foundInner = true;
 
@@ -3441,39 +3456,39 @@ Catbus.flush = function(){
 
 // the PathResolver is a namespace that uses a browser hack to generate an
 // absolute path from a url string -- using an anchor tag's href.
-// it combines the aliasMap with a file and possible base directory.
+// it combines the aliasMap with a url and possible root directory.
 
 
 const PathResolver = {};
 const ANCHOR = document.createElement('a');
 
 
-PathResolver.resolveFile = function resolveFile(aliasMap, file, dir) {
+PathResolver.resolveUrl = function resolveUrl(aliasMap, url, root) {
 
-    file = aliasMap ? (aliasMap[file] || file) : file;
+    url = aliasMap ? (aliasMap[url] || url) : url;
 
-    if(dir && file.indexOf('http') !== 0)  {
+    if(root && url.indexOf('http') !== 0)  {
 
-            dir = aliasMap ? (aliasMap[dir] || dir) : dir;
-            const lastChar = dir.substr(-1);
-            file = (lastChar !== '/') ? dir + '/' + file : dir + file;
+            root = aliasMap ? (aliasMap[root] || root) : root;
+            const lastChar = root.substr(-1);
+            url = (lastChar !== '/') ? root + '/' + url : root + url;
 
     }
 
-    ANCHOR.href = file;
+    ANCHOR.href = url;
     return ANCHOR.href;
 
 };
 
 
-PathResolver.resolveDir = function resolveDir(aliasMap, file, dir){
+PathResolver.resolveRoot = function resolveRoot(aliasMap, url, root){
 
-    return toDir(PathResolver.resolveFile(aliasMap, file, dir));
+    return toRoot(PathResolver.resolveUrl(aliasMap, url, root));
 
 };
 
 
-function toDir(path){
+function toRoot(path){
 
     const i = path.lastIndexOf('/');
     return path.substring(0, i + 1);
@@ -3521,7 +3536,7 @@ ScriptLoader.onLoad = function onLoad(e){
 
     cache[src] = ScriptLoader.currentScript;
     ScriptLoader.currentScript.url = src;
-    ScriptLoader.currentScript.dir = toDir$1(src);
+    ScriptLoader.currentScript.root = toRoot$1(src);
 
     console.log(cache);
     cleanup(e);
@@ -3578,7 +3593,7 @@ ScriptLoader.load = function(path){
 
 };
 
-function toDir$1(path){
+function toRoot$1(path){
     const i = path.lastIndexOf('/');
     return path.substring(0, i + 1);
 }
@@ -3636,28 +3651,28 @@ function notReady(arr){
 }
 
 // whenever new aliases or valves (limiting access to aliases) are encountered,
-// a new aliasContext is created and used to resolve files and directories.
+// a new aliasContext is created and used to resolve urls and directories.
 // it inherits the aliases from above and then extends or limits those.
 //
-// the resolveFile and resolveDir methods determine a path from a file and/or
+// the resolveUrl and resolveRoot methods determine a path from a url and/or
 // directory combination (either can be an alias). if no directory is
-// given -- and the file or alias is not an absolute path -- then a relative path
-// is generated from the current file (returning a new absolute path).
+// given -- and the url or alias is not an absolute path -- then a relative path
+// is generated from the current url (returning a new absolute path).
 //
 // (all method calls are cached here for performance reasons)
 
-function AliasContext(sourceDir, aliasMap, valveMap){
+function AliasContext(sourceRoot, aliasMap, valveMap){
 
-    this.sourceDir = sourceDir;
+    this.sourceRoot = sourceRoot;
     this.aliasMap = aliasMap ? restrict(copy(aliasMap), valveMap) : {};
-    this.fileCache = {}; // 2 level cache (first dir, then file)
-    this.dirCache = {}; // 2 level cache (first dir, then file)
+    this.urlCache = {}; // 2 level cache (first root, then url)
+    this.rootCache = {}; // 2 level cache (first root, then url)
     this.shared = false; // shared once used by another lower cog
 
 }
 
 AliasContext.prototype.clone = function(){
-    return new AliasContext(this.sourceDir, this.aliasMap);
+    return new AliasContext(this.sourceRoot, this.aliasMap);
 };
 
 
@@ -3667,7 +3682,7 @@ AliasContext.prototype.restrictAliasList = function(valveMap){
 };
 
 AliasContext.prototype.injectAlias = function(alias){
-    this.aliasMap[alias.name] = this.resolveFile(alias.file, alias.dir);
+    this.aliasMap[alias.name] = this.resolveUrl(alias.url, alias.root);
     return this;
 };
 
@@ -3678,7 +3693,7 @@ AliasContext.prototype.injectAliasList = function(aliasList){
     return this;
 };
 
-// given a list of objects with file and dir, get urls not yet downloaded
+// given a list of objects with url and root, get urls not yet downloaded
 
 AliasContext.prototype.freshUrls = function freshUrls(list) {
 
@@ -3701,27 +3716,27 @@ AliasContext.prototype.freshUrls = function freshUrls(list) {
 
 
 AliasContext.prototype.itemToUrl = function applyUrl(item) {
-    return this.resolveFile(item.file, item.dir);
+    return this.resolveUrl(item.url, item.root);
 };
 
 
-AliasContext.prototype.resolveFile = function resolveFile(file, dir){
+AliasContext.prototype.resolveUrl = function resolveUrl(url, root){
 
-    const cache = this.fileCache;
-    dir = dir || this.sourceDir || '';
-    const baseCache = cache[dir] = cache[dir] || {};
-    return baseCache[file] = baseCache[file] ||
-        PathResolver.resolveFile(this.aliasMap, file, dir);
+    const cache = this.urlCache;
+    root = root || this.sourceRoot || '';
+    const baseCache = cache[root] = cache[root] || {};
+    return baseCache[url] = baseCache[url] ||
+        PathResolver.resolveUrl(this.aliasMap, url, root);
 
 };
 
-AliasContext.prototype.resolveDir = function resolveDir(url, base){
+AliasContext.prototype.resolveRoot = function resolveRoot(url, base){
 
-    const cache = this.dirCache;
-    base = base || this.sourceDir || '';
+    const cache = this.rootCache;
+    base = base || this.sourceRoot || '';
     const baseCache = cache[base] = cache[base] || {};
     return baseCache[url] = baseCache[url] ||
-        PathResolver.resolveDir(this.aliasMap, url, base);
+        PathResolver.resolveRoot(this.aliasMap, url, base);
 
 };
 
@@ -3777,7 +3792,7 @@ function Trait(cog, def){
 
     this.cog = cog;
     this.config = def.config || {};
-    this.url = cog.aliasContext.resolveFile(def.file, def.dir);
+    this.url = cog.aliasContext.resolveUrl(def.url, def.root);
     this.script = Object.create(ScriptLoader.read(this.url));
     this.script.cog = cog.script;
     this.script.config = this.config;
@@ -3796,7 +3811,7 @@ function Cog(url, el, before, parent, config){
     this.parent = parent || null;
     this.scope = parent ? parent.scope.createChild() : Catbus.createChild();
     this.url = url;
-    this.dir = '';
+    this.root = '';
     this.script = null;
     this.config = config || {};
     this.scriptMonitor = null;
@@ -3883,7 +3898,7 @@ Cog.prototype.load = function() {
 Cog.prototype.onScriptReady = function() {
 
     this.script = Object.create(ScriptLoader.read(this.url));
-    this.dir = this.script.dir;
+    this.root = this.script.root;
     this.prep();
 
 };
@@ -3895,7 +3910,7 @@ Cog.prototype.prep = function(){
     const aliasValveMap = parent ? parent.aliasValveMap : null;
     const aliasList = this.script.alias;
 
-    if(parent && parent.dir === this.dir && !aliasList && !aliasValveMap){
+    if(parent && parent.root === this.root && !aliasList && !aliasValveMap){
         // same relative path, no new aliases and no valves, reuse parent context
         this.aliasContext = parent.aliasContext;
         this.aliasContext.shared = true;
@@ -3903,7 +3918,7 @@ Cog.prototype.prep = function(){
         // new context, apply valves from parent then add aliases from cog
         this.aliasContext = parent
             ? parent.aliasContext.clone()
-            : new AliasContext(this.dir); // root of application
+            : new AliasContext(this.root); // root of application
         this.aliasContext.restrictAliasList(aliasValveMap);
         this.aliasContext.injectAliasList(aliasList);
     }
@@ -4051,7 +4066,7 @@ Cog.prototype.buildCogs = function buildCogs(){
     for(let i = 0; i < len; ++i){
 
         const def = cogs[i];
-        const url = aliasContext.resolveFile(def.file, def.dir);
+        const url = aliasContext.resolveUrl(def.url, def.root);
         const el = this.getNamedElement(def.el);
         const before = !!(el && def.before);
         const cog = new Cog(url, el, before, this, def.config);
@@ -4082,7 +4097,7 @@ Cog.prototype.buildTraits = function buildData(){
 
     const len = traits.length;
     for(let i = 0; i < len; ++i){
-        const def = traits[i]; // todo path and root instead of file/dir?
+        const def = traits[i]; // todo path and root instead of url/root?
         const instance = new Trait(this, def);
         instances.push(instance);
         instance.script.prep();
@@ -4124,7 +4139,7 @@ Cog.prototype.startTraits = function startTraits(){
 
 };
 
-Cog.prototype.build = function build(){ // files loaded
+Cog.prototype.build = function build(){ // urls loaded
 
     // script.prep is called earlier
     this.buildTraits(); // calls prep on all traits
@@ -4166,7 +4181,7 @@ const NOOP = function(){};
 
 Muta.init = function init(el, url){
 
-    url = PathResolver.resolveFile(null, url);
+    url = PathResolver.resolveUrl(null, url);
     return new Cog(url, el);
 
 };

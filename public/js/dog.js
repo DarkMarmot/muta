@@ -11,6 +11,6 @@ Muta.cog({
     },
 
     traits: [
-        {file: 'test2.js', config: { meow: 'i do not bark!'}}
+        {url: 'test2.js', config: { meow: 'i do not bark!'}}
     ]
 });

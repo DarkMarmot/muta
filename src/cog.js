@@ -18,7 +18,7 @@ function Cog(url, el, before, parent, config){
     this.parent = parent || null;
     this.scope = parent ? parent.scope.createChild() : Catbus.createChild();
     this.url = url;
-    this.dir = '';
+    this.root = '';
     this.script = null;
     this.config = config || {};
     this.scriptMonitor = null;
@@ -105,7 +105,7 @@ Cog.prototype.load = function() {
 Cog.prototype.onScriptReady = function() {
 
     this.script = Object.create(ScriptLoader.read(this.url));
-    this.dir = this.script.dir;
+    this.root = this.script.root;
     this.prep();
 
 };
@@ -117,7 +117,7 @@ Cog.prototype.prep = function(){
     const aliasValveMap = parent ? parent.aliasValveMap : null;
     const aliasList = this.script.alias;
 
-    if(parent && parent.dir === this.dir && !aliasList && !aliasValveMap){
+    if(parent && parent.root === this.root && !aliasList && !aliasValveMap){
         // same relative path, no new aliases and no valves, reuse parent context
         this.aliasContext = parent.aliasContext;
         this.aliasContext.shared = true;
@@ -125,7 +125,7 @@ Cog.prototype.prep = function(){
         // new context, apply valves from parent then add aliases from cog
         this.aliasContext = parent
             ? parent.aliasContext.clone()
-            : new AliasContext(this.dir); // root of application
+            : new AliasContext(this.root); // root of application
         this.aliasContext.restrictAliasList(aliasValveMap);
         this.aliasContext.injectAliasList(aliasList);
     }
@@ -273,7 +273,7 @@ Cog.prototype.buildCogs = function buildCogs(){
     for(let i = 0; i < len; ++i){
 
         const def = cogs[i];
-        const url = aliasContext.resolveFile(def.file, def.dir);
+        const url = aliasContext.resolveUrl(def.url, def.root);
         const el = this.getNamedElement(def.el);
         const before = !!(el && def.before);
         const cog = new Cog(url, el, before, this, def.config);
@@ -304,7 +304,7 @@ Cog.prototype.buildTraits = function buildData(){
 
     const len = traits.length;
     for(let i = 0; i < len; ++i){
-        const def = traits[i]; // todo path and root instead of file/dir?
+        const def = traits[i]; // todo path and root instead of url/root?
         const instance = new Trait(this, def);
         instances.push(instance);
         instance.script.prep();
@@ -346,7 +346,7 @@ Cog.prototype.startTraits = function startTraits(){
 
 };
 
-Cog.prototype.build = function build(){ // files loaded
+Cog.prototype.build = function build(){ // urls loaded
 
     // script.prep is called earlier
     this.buildTraits(); // calls prep on all traits

@@ -4,19 +4,19 @@ Muta.cog({
     display: '<div name="bunny" style="background: #6b543c; color: #ffdf88; padding: 10px;">moo dog win!</div>',
 
     alias: [
-        {name: 'ROOT', file: './'}
+        {name: 'ROOT', url: './'}
     ],
 
     cogs: [
 
-        {file: 'cow.js', el: 'bunny', put: 'after'},
-        {file: 'dog.js', el: 'bunny'},
-        {file: 'dog.js', config: {say: 'puppy'}}
+        {url: 'cow.js', el: 'bunny', put: 'after'},
+        {url: 'dog.js', el: 'bunny'},
+        {url: 'dog.js', config: {say: 'puppy'}}
 
     ],
 
     books: [
-        {file: 'meow.js'}
+        {url: 'meow.js'}
     ],
 
     states: {
@@ -42,7 +42,7 @@ Muta.cog({
     ],
 
     traits: [
-        {file: 'test2.js', config: { meow: 'i do meow!'}}
+        {url: 'test2.js', config: { meow: 'i do meow!'}}
     ],
 
     methods: {

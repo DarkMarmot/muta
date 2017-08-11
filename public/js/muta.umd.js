@@ -166,6 +166,9 @@ class Data {
 
         type = type || DATA_TYPES.NONE;
 
+        if(!name)
+            throw new Error('Data requires a name');
+
         if(!isValid(type))
             throw new Error('Invalid Data of type: ' + type);
 
@@ -173,6 +176,7 @@ class Data {
         this._name       = name;
         this._type       = type;
         this._dead       = false;
+        this._local      = name[0] === '_';
 
         this._noTopicList = new SubscriberList('', this);
         this._wildcardSubscriberList = new SubscriberList('', this);
@@ -456,19 +460,12 @@ function SubscribeSource(name, data, topic, canPull){
 
 }
 
-function tryEmit(source){
-    try{
-        source.emit();
-    } catch(e){
-    }
-}
 
 SubscribeSource.prototype.pull = function pull(){
 
-    !this.dead && this.canPull && tryEmit(this);
+    !this.dead && this.canPull && this.emit();
 
 };
-
 
 
 SubscribeSource.prototype.emit = function emit(){
@@ -567,7 +564,7 @@ BatchStream.prototype.handle = function handle(msg, source, topic) {
 
     if(!this.latched){
         this.latched = true;
-        Catbus$1.enqueue(this);
+        Catbus.enqueue(this);
     }
 
 };
@@ -637,10 +634,11 @@ NOOP_STREAM.addStubs(TapStream);
 function IDENTITY$2(msg, source, topic) { return msg; }
 
 
-function MsgStream(name, f) {
+function MsgStream(name, f, context) {
 
     this.name = name;
     this.f = f || IDENTITY$2;
+    this.context = context;
     this.next = NOOP_STREAM;
 
 }
@@ -649,7 +647,7 @@ function MsgStream(name, f) {
 MsgStream.prototype.handle = function msgHandle(msg, source, topic) {
 
     const f = this.f;
-    this.next.handle(f(msg, source, topic), source, topic);
+    this.next.handle(f.call(this.context, msg, source, topic), source, topic);
 
 };
 
@@ -869,13 +867,13 @@ GroupStream.prototype.reset = function reset(msg) {
 
 NOOP_STREAM.addStubs(GroupStream);
 
-function TRUE() { return true; }
+function TRUE$1() { return true; }
 
 
 function LatchStream(name, f) {
 
     this.name = name;
-    this.f = f || TRUE;
+    this.f = f || TRUE$1;
     this.next = NOOP_STREAM;
     this.latched = false;
 
@@ -1060,6 +1058,39 @@ FilterMapStream.prototype.handle = function filterHandle(msg, source, topic) {
 };
 
 NOOP_STREAM.addStubs(FilterMapStream);
+
+function PriorStream(name) {
+
+    this.name = name;
+    this.values = [];
+    this.next = NOOP_STREAM;
+
+}
+
+PriorStream.prototype.handle = function handle(msg, source, topic) {
+
+    const arr = this.values;
+
+    arr.push(msg);
+
+    if(arr.length === 1)
+        return;
+
+    if(arr.length > 2)
+        arr.shift();
+
+    this.next.handle(arr[0], source, topic);
+
+};
+
+PriorStream.prototype.reset = function(msg, source, topic){
+
+    this.msg = [];
+    this.next.reset();
+
+};
+
+NOOP_STREAM.addStubs(PriorStream);
 
 function FUNCTOR$4(d) {
     return typeof d === 'function' ? d : function() { return d; };
@@ -1903,7 +1934,7 @@ function getDoMsgExtract(word) {
 }
 
 
-function applyReaction(scope, bus, phrase, target) { // target is some event emitter
+function applyReaction(scope, bus, phrase, target, lookup) { // target is some event emitter
 
     const need = [];
     const skipDupes = [];
@@ -2024,7 +2055,7 @@ function applyMethod(bus, word) {
 
 }
 
-function applyProcess(scope, bus, phrase, context, node) {
+function applyProcess(scope, bus, phrase, context, node, lookup) {
 
     const operation = phrase[0].operation; // same for all words in a process phrase
 
@@ -2041,9 +2072,9 @@ function applyProcess(scope, bus, phrase, context, node) {
     } else if (operation === 'METHOD') {
         applyMethod(bus, phrase[0]);
     } else if (operation === 'FILTER') {
-        applyFilterProcess(bus, phrase, context);
+        applyFilterProcess(bus, phrase, context, lookup);
     } else if (operation === 'RUN') {
-        applyMsgProcess(bus, phrase, context);
+        applyMsgProcess(bus, phrase, context, lookup);
     } else if (operation === 'ALIAS') {
         applySourceProcess(bus, phrase[0]);
     } else if (operation === 'WRITE') {
@@ -2065,15 +2096,16 @@ function applyWriteProcess(bus, scope, word){
 
 }
 
-function applyMsgProcess(bus, phrase, context){
+function applyMsgProcess(bus, phrase, context, lookup){
 
     const len = phrase.length;
+    lookup = lookup || context;
 
     for(let i = 0; i < len; i++) {
 
         const word = phrase[i];
         const name = word.name;
-        const method = context[name];
+        const method = lookup[name];
 
         bus.msg(method, context);
 
@@ -2092,15 +2124,16 @@ function applySourceProcess(bus, word){
 }
 
 
-function applyFilterProcess(bus, phrase, context){
+function applyFilterProcess(bus, phrase, context, lookup){
 
     const len = phrase.length;
+    lookup = lookup || context;
 
     for(let i = 0; i < len; i++) {
 
         const word = phrase[i];
         const name = word.name;
-        const method = context[name];
+        const method = lookup[name];
 
         bus.filter(method, context);
 
@@ -2108,14 +2141,14 @@ function applyFilterProcess(bus, phrase, context){
 
 }
 
-function createBus(nyan, scope, context, target){
+function createBus(nyan, scope, context, target, lookup){
 
     let bus = new Bus(scope);
-    return applyNyan(nyan, bus, context, target);
+    return applyNyan(nyan, bus, context, target, lookup);
 
 }
 
-function applyNyan(nyan, bus, context, target){
+function applyNyan(nyan, bus, context, target, lookup){
 
     const len = nyan.length;
     const scope = bus.scope;
@@ -2138,9 +2171,9 @@ function applyNyan(nyan, bus, context, target){
         } else {
 
             if(name === 'PROCESS')
-                applyProcess(scope, bus, phrase, context, target);
+                applyProcess(scope, bus, phrase, context, target, lookup);
             else // name === 'REACT'
-                applyReaction(scope, bus, phrase, target);
+                applyReaction(scope, bus, phrase, target, lookup);
 
         }
     }
@@ -2176,15 +2209,15 @@ const tapStreamBuilder = function(f) {
     }
 };
 
-const msgStreamBuilder = function(f) {
+const msgStreamBuilder = function(f, context) {
     return function(name) {
-        return new MsgStream(name, f);
+        return new MsgStream(name, f, context);
     }
 };
 
-const filterStreamBuilder = function(f) {
+const filterStreamBuilder = function(f, context) {
     return function(name) {
-        return new FilterStream(name, f);
+        return new FilterStream(name, f, context);
     }
 };
 
@@ -2197,6 +2230,12 @@ const skipStreamBuilder = function(f) {
 const lastNStreamBuilder = function(count) {
     return function(name) {
         return new LastNStream(name, count);
+    }
+};
+
+const priorStreamBuilder = function() {
+    return function(name) {
+        return new PriorStream(name);
     }
 };
 
@@ -2293,7 +2332,6 @@ class Bus {
         this._parent = null;
 
         // temporary api states (used for interactively building the bus)
-
 
         this._spork = null; // beginning frame of split sub process
         this._holding = false; // multiple commands until duration function
@@ -2492,13 +2530,22 @@ class Bus {
 
     };
 
+    fuse(bus) {
+
+        this.add(bus);
+        this.merge();
+        this.group();
+
+        return this;
+    };
+
     join() {
 
         const parent = this.back();
         parent.add(this);
         return parent;
 
-    }
+    };
 
     add(bus) {
 
@@ -2651,6 +2698,14 @@ class Bus {
         return this;
     };
 
+
+    prior() {
+
+        this._createNormalFrame(priorStreamBuilder());
+        return this;
+
+    };
+
     run(f) {
 
         this._ASSERT_IS_FUNCTION(f);
@@ -2667,11 +2722,11 @@ class Bus {
 
     };
 
-    msg(fAny) {
+    msg(fAny, context) {
 
         const f = FUNCTOR(fAny);
 
-        this._createNormalFrame(msgStreamBuilder(f));
+        this._createNormalFrame(msgStreamBuilder(f, context));
         return this;
 
 
@@ -2698,12 +2753,12 @@ class Bus {
 
     };
 
-    filter(f) {
+    filter(f, context) {
 
         this._ASSERT_IS_FUNCTION(f);
         this._ASSERT_NOT_HOLDING();
 
-        this._createNormalFrame(filterStreamBuilder(f));
+        this._createNormalFrame(filterStreamBuilder(f, context));
         return this;
 
 
@@ -2746,7 +2801,7 @@ class Bus {
 
     addEvent(name, target, eventName, useCapture){
 
-        const source = new EventSource(name, target, eventName, useCapture);
+        const source = new EventSource(name, target, eventName || name, useCapture);
         this.addSource(source);
 
         return this;
@@ -2789,6 +2844,9 @@ function _destroyEach(arr){
 
 }
 
+function isPrivate(name){
+    return name[0] === '_';
+}
 
 class Scope{
 
@@ -2815,14 +2873,13 @@ class Scope{
 
     };
 
-    bus(strOrNyan, context, node){
+    bus(strOrNyan, context, node, lookup){
 
         if(!strOrNyan)
             return new Bus(this);
 
         const nyan = (typeof strOrNyan === 'string') ? Nyan.parse(strOrNyan) : strOrNyan;
-        console.log(nyan);
-        return NyanRunner.createBus(nyan, this, context, node);
+        return NyanRunner.createBus(nyan, this, context, node, lookup);
 
     };
 
@@ -3041,8 +3098,12 @@ class Scope{
     find(name, required){
 
         const localData = this.grab(name);
+
         if(localData)
             return localData;
+
+        if(isPrivate(name))
+            return null;
 
         let scope = this;
 
@@ -3076,8 +3137,12 @@ class Scope{
 
     findOuter(name, required){
 
+        if(isPrivate(name))
+            return null;
+
         let foundInner = false;
         const localData = this.grab(name);
+
         if(localData)
             foundInner = true;
 
@@ -3227,7 +3292,7 @@ function ValueSource(name, value){
 
 }
 
-function tryEmit$1(source){
+function tryEmit(source){
     try{
         source.emit();
     } catch(e){
@@ -3236,7 +3301,7 @@ function tryEmit$1(source){
 
 ValueSource.prototype.pull = function pull(){
 
-    tryEmit$1(this);
+    tryEmit(this);
 
 };
 
@@ -3271,17 +3336,17 @@ function push(stream, arr, len, name){
 
 NOOP_SOURCE.addStubs(ArraySource);
 
-const Catbus$1 = {};
+const Catbus = {};
 
 let _batchQueue = [];
 let _primed = false;
 
-Catbus$1.bus = function(){
+Catbus.bus = function(){
     return new Bus();
 };
 
 
-Catbus$1.fromInterval = function(name, delay, msg){
+Catbus.fromInterval = function(name, delay, msg){
 
     const bus = new Bus();
     const source = new IntervalSource(name, delay, msg);
@@ -3291,7 +3356,7 @@ Catbus$1.fromInterval = function(name, delay, msg){
 
 };
 
-Catbus$1.fromEvent = function(target, eventName, useCapture){
+Catbus.fromEvent = function(target, eventName, useCapture){
 
     const bus = new Bus();
     const source = new EventSource(eventName, target, eventName, useCapture);
@@ -3301,7 +3366,7 @@ Catbus$1.fromEvent = function(target, eventName, useCapture){
 
 };
 
-Catbus$1.fromValues = function(values){
+Catbus.fromValues = function(values){
 
     const bus = new Bus();
     const len = values.length;
@@ -3313,13 +3378,13 @@ Catbus$1.fromValues = function(values){
 
 };
 
-Catbus$1.fromArray = function(arr, name){
+Catbus.fromArray = function(arr, name){
 
-    return Catbus$1.fromValue(arr, name).split();
+    return Catbus.fromValue(arr, name).split();
 
 };
 
-Catbus$1.fromValue = function(value, name){
+Catbus.fromValue = function(value, name){
 
     const bus = new Bus();
     const source = new ValueSource(name || '', value);
@@ -3330,7 +3395,7 @@ Catbus$1.fromValue = function(value, name){
 };
 
 
-Catbus$1.fromSubscribe = function(name, data, topic){
+Catbus.fromSubscribe = function(name, data, topic){
 
     const bus = new Bus();
     const source = new SubscribeSource(name, data, topic, true);
@@ -3343,27 +3408,27 @@ Catbus$1.fromSubscribe = function(name, data, topic){
 
 // todo stable output queue -- output pools go in a queue that runs after the batch q is cleared, thus run once only
 
-Catbus$1.enqueue = function(pool){
+Catbus.enqueue = function(pool){
 
     _batchQueue.push(pool);
 
     if(!_primed) { // register to flush the queue
         _primed = true;
-        if (typeof window !== 'undefined' && window.requestAnimationFrame) requestAnimationFrame(Catbus$1.flush);
-        else process.nextTick(Catbus$1.flush);
+        if (typeof window !== 'undefined' && window.requestAnimationFrame) requestAnimationFrame(Catbus.flush);
+        else process.nextTick(Catbus.flush);
     }
 
 };
 
 
-Catbus$1.createChild = Catbus$1.scope = function(name){
+Catbus.createChild = Catbus.scope = function(name){
 
     return new Scope(name);
 
 };
 
 
-Catbus$1.flush = function(){
+Catbus.flush = function(){
 
     _primed = false;
 
@@ -3391,40 +3456,43 @@ Catbus$1.flush = function(){
 
 // the PathResolver is a namespace that uses a browser hack to generate an
 // absolute path from a url string -- using an anchor tag's href.
-// it combines the aliasMap with a file and possible base directory.
+// it combines the aliasMap with a url and possible root directory.
+
 
 const PathResolver = {};
 const ANCHOR = document.createElement('a');
 
-// base is current file root or specified root
 
-PathResolver.resolveFile = function resolveFile(aliasMap, file, dir) {
+PathResolver.resolveUrl = function resolveUrl(aliasMap, url, root) {
 
-    file = aliasMap ? (aliasMap[file] || file) : file;
+    url = aliasMap ? (aliasMap[url] || url) : url;
 
-    if(dir && file.indexOf('http') !== 0)  {
+    if(root && url.indexOf('http') !== 0)  {
 
-            dir = aliasMap ? (aliasMap[dir] || dir) : dir;
-            const lastChar = dir.substr(-1);
-            file = (lastChar !== '/') ? dir + '/' + file : dir + file;
+            root = aliasMap ? (aliasMap[root] || root) : root;
+            const lastChar = root.substr(-1);
+            url = (lastChar !== '/') ? root + '/' + url : root + url;
 
     }
 
-    ANCHOR.href = file;
+    ANCHOR.href = url;
     return ANCHOR.href;
 
 };
 
-PathResolver.resolveDir = function resolveDir(aliasMap, file, dir){
 
-    return toDir(PathResolver.resolveFile(aliasMap, file, dir));
+PathResolver.resolveRoot = function resolveRoot(aliasMap, url, root){
+
+    return toRoot(PathResolver.resolveUrl(aliasMap, url, root));
 
 };
 
 
-function toDir(path){
+function toRoot(path){
+
     const i = path.lastIndexOf('/');
     return path.substring(0, i + 1);
+
 }
 
 // holds a cache of all scripts loaded by url
@@ -3433,7 +3501,7 @@ const ScriptLoader = {};
 const status = { loaded: {}, failed: {}, fetched: {}};
 const cache = {};
 
-const listenersByFile = {}; // loaded only, use init timeouts to request again
+const listenersByUrl = {}; // loaded only, use init timeouts to request again
 
 
 function cleanup(e){
@@ -3467,24 +3535,24 @@ ScriptLoader.onLoad = function onLoad(e){
     status.loaded[src] = true;
 
     cache[src] = ScriptLoader.currentScript;
-    ScriptLoader.currentScript.__file = src;
-    ScriptLoader.currentScript.__dir = toDir$1(src);
+    ScriptLoader.currentScript.url = src;
+    ScriptLoader.currentScript.root = toRoot$1(src);
 
     console.log(cache);
     cleanup(e);
 
-    const listeners = listenersByFile[src] || [];
+    const listeners = listenersByUrl[src] || [];
     const len = listeners.length;
     for(let i = 0; i < len; ++i){
         const f = listeners[i];
         f.call(null, src);
     }
 
-    listenersByFile[src] = [];
+    listenersByUrl[src] = [];
 
 };
 
-ScriptLoader.read = function script(path){
+ScriptLoader.read = function read(path){
     return cache[path];
 };
 
@@ -3497,7 +3565,7 @@ ScriptLoader.request = function request(path, callback){
     if(status.loaded[path])
         return callback.call(null, path);
 
-    const listeners = listenersByFile[path] = listenersByFile[path] || [];
+    const listeners = listenersByUrl[path] = listenersByUrl[path] || [];
     const i = listeners.indexOf(callback);
     if(i === -1){
         listeners.push(callback);
@@ -3525,10 +3593,13 @@ ScriptLoader.load = function(path){
 
 };
 
-function toDir$1(path){
+function toRoot$1(path){
     const i = path.lastIndexOf('/');
     return path.substring(0, i + 1);
 }
+
+// todo add ability to share this among cogs, add additional paths with new callback
+// thus entire trees can mount at once
 
 function ScriptMonitor(paths, callback){
 
@@ -3579,41 +3650,677 @@ function notReady(arr){
 
 }
 
-function App(el, path){
+// whenever new aliases or valves (limiting access to aliases) are encountered,
+// a new aliasContext is created and used to resolve urls and directories.
+// it inherits the aliases from above and then extends or limits those.
+//
+// the resolveUrl and resolveRoot methods determine a path from a url and/or
+// directory combination (either can be an alias). if no directory is
+// given -- and the url or alias is not an absolute path -- then a relative path
+// is generated from the current url (returning a new absolute path).
+//
+// (all method calls are cached here for performance reasons)
 
-    this.catbus = Catbus;
-    this.scope = this.catbus.createChild();
-    this.el = el;
-    this.path = path;
+function AliasContext(sourceRoot, aliasMap, valveMap){
+
+    this.sourceRoot = sourceRoot;
+    this.aliasMap = aliasMap ? restrict(copy(aliasMap), valveMap) : {};
+    this.urlCache = {}; // 2 level cache (first root, then url)
+    this.rootCache = {}; // 2 level cache (first root, then url)
+    this.shared = false; // shared once used by another lower cog
 
 }
 
-const Muta = {};
-Muta.PR = PathResolver;
+AliasContext.prototype.clone = function(){
+    return new AliasContext(this.sourceRoot, this.aliasMap);
+};
 
-Muta.init = function init(el, path){
 
-    return new App(el, path);
+AliasContext.prototype.restrictAliasList = function(valveMap){
+    this.aliasMap = restrict(this.aliasMap, valveMap);
+    return this;
+};
+
+AliasContext.prototype.injectAlias = function(alias){
+    this.aliasMap[alias.name] = this.resolveUrl(alias.url, alias.root);
+    return this;
+};
+
+AliasContext.prototype.injectAliasList = function(aliasList){
+    for(let i = 0; i < aliasList.length; i++){
+        this.injectAlias(aliasList[i]);
+    }
+    return this;
+};
+
+// given a list of objects with url and root, get urls not yet downloaded
+
+AliasContext.prototype.freshUrls = function freshUrls(list) {
+
+    const result = [];
+
+    if(!list)
+        return result;
+
+    for(let i = 0; i < list.length; i++){
+        const url = this.itemToUrl(list[i]);
+        if(!ScriptLoader.has(url) && result.indexOf(url) === -1)
+            result.push(url);
+    }
+
+    return result;
 
 };
 
+
+
+
+AliasContext.prototype.itemToUrl = function applyUrl(item) {
+    return this.resolveUrl(item.url, item.root);
+};
+
+
+AliasContext.prototype.resolveUrl = function resolveUrl(url, root){
+
+    const cache = this.urlCache;
+    root = root || this.sourceRoot || '';
+    const baseCache = cache[root] = cache[root] || {};
+    return baseCache[url] = baseCache[url] ||
+        PathResolver.resolveUrl(this.aliasMap, url, root);
+
+};
+
+AliasContext.prototype.resolveRoot = function resolveRoot(url, base){
+
+    const cache = this.rootCache;
+    base = base || this.sourceRoot || '';
+    const baseCache = cache[base] = cache[base] || {};
+    return baseCache[url] = baseCache[url] ||
+        PathResolver.resolveRoot(this.aliasMap, url, base);
+
+};
+
+
+// limits the source hash to only have keys found in the valves hash (if present)
+
+function restrict(source, valves){
+
+    if(!valves)
+        return source;
+
+    const result = {};
+    for(const k in valves){
+        result[k] = source[k];
+    }
+
+    return result;
+}
+
+// creates a shallow copy of the source hash
+
+function copy(source, target){
+
+    target = target || {};
+    for(const k in source){
+        target[k] = source[k];
+    }
+    return target;
+
+}
+
+const pool = [];
+
+function createPlaceholderDiv(){
+    const d = document.createElement('div');
+    d.style.display = 'none';
+    return d;
+}
+
+const Placeholder = {};
+
+Placeholder.take = function(){
+    return pool.length ? pool.shift() : createPlaceholderDiv();
+};
+
+Placeholder.give = function(el){
+    pool.push(el);
+    if(el.parentNode)
+        el.parentNode.removeChild(el);
+};
+
+function Trait(cog, def){
+
+    this.cog = cog;
+    this.config = def.config || {};
+    this.url = cog.aliasContext.resolveUrl(def.url, def.root);
+    this.script = Object.create(ScriptLoader.read(this.url));
+    this.script.cog = cog.script;
+    this.script.config = this.config;
+    this.script.api = cog.api;
+
+}
+
+function Cog(url, el, before, parent, config){
+
+    this.placeholder = null;
+    this.el = el; // ref element
+    this.before = !!before; // el appendChild or insertBefore
+    this.domElements = [];
+    this.namedElements = {};
+    this.children = [];
+    this.parent = parent || null;
+    this.scope = parent ? parent.scope.createChild() : Catbus.createChild();
+    this.url = url;
+    this.root = '';
+    this.script = null;
+    this.config = config || {};
+    this.scriptMonitor = null;
+    this.aliasValveMap = null;
+    this.aliasContext = null;
+
+    this.bookUrls = null;
+    this.traitUrls = null;
+
+    this.traitInstances = [];
+    this.busInstances = [];
+
+    this.usePlaceholder();
+    this.load();
+
+}
+
+Cog.prototype.usePlaceholder = function() {
+
+    this.placeholder = Placeholder.take();
+
+    if(this.el) {
+        if (this.before) {
+            this.el.parentNode.insertBefore(this.placeholder, this.el);
+        } else {
+            this.el.appendChild(this.placeholder);
+        }
+    } else {
+
+        this.parent.placeholder.parentNode
+            .insertBefore(this.placeholder, this.parent.placeholder);
+    }
+
+};
+
+Cog.prototype.killPlaceholder = function() {
+
+    if(!this.placeholder)
+        return;
+
+    Placeholder.give(this.placeholder);
+    this.placeholder = null;
+
+};
+
+
+Cog.prototype.mountDisplay = function() {
+
+    if(!this.script.display)
+        return;
+
+    let frag = document
+        .createRange()
+        .createContextualFragment(this.script.display);
+
+    const named = frag.querySelectorAll('[name]');
+    const len = named.length;
+    const hash = this.namedElements;
+    const scriptEls = this.script.els;
+
+    for(let i = 0; i < len; ++i){
+        const el = named[i];
+        const name = el.getAttribute('name');
+        hash[name] = el;
+        scriptEls[name] = el;
+    }
+
+    this.elements = [].slice.call(frag.childNodes, 0);
+    this.placeholder.parentNode.insertBefore(frag, this.placeholder);
+
+
+};
+
+
+Cog.prototype.load = function() {
+
+    if(ScriptLoader.has(this.url)){
+        this.onScriptReady();
+    } else {
+        ScriptLoader.request(this.url, this.onScriptReady.bind(this));
+    }
+
+};
+
+Cog.prototype.onScriptReady = function() {
+
+    this.script = Object.create(ScriptLoader.read(this.url));
+    this.root = this.script.root;
+    this.prep();
+
+};
+
+
+Cog.prototype.prep = function(){
+
+    const parent = this.parent;
+    const aliasValveMap = parent ? parent.aliasValveMap : null;
+    const aliasList = this.script.alias;
+
+    if(parent && parent.root === this.root && !aliasList && !aliasValveMap){
+        // same relative path, no new aliases and no valves, reuse parent context
+        this.aliasContext = parent.aliasContext;
+        this.aliasContext.shared = true;
+    } else {
+        // new context, apply valves from parent then add aliases from cog
+        this.aliasContext = parent
+            ? parent.aliasContext.clone()
+            : new AliasContext(this.root); // root of application
+        this.aliasContext.restrictAliasList(aliasValveMap);
+        this.aliasContext.injectAliasList(aliasList);
+    }
+
+    this.script.prep();
+    this.loadBooks();
+
+};
+
+
+
+Cog.prototype.loadBooks = function loadBooks(){
+
+    const urls = this.bookUrls = this.aliasContext.freshUrls(this.script.books);
+
+    if(urls.length){
+        this.scriptMonitor = new ScriptMonitor(urls, this.readBooks.bind(this));
+    } else {
+        this.loadTraits();
+    }
+
+};
+
+
+
+
+Cog.prototype.readBooks = function readBooks() {
+
+    const urls = this.bookUrls;
+
+    if(this.aliasContext.shared) // need a new context
+        this.aliasContext = this.aliasContext.clone();
+
+    for (let i = 0; i < urls.length; ++i) {
+
+        const url = urls[i];
+        const book = ScriptLoader.read(url);
+        if(book.type !== 'book')
+            console.log('EXPECTED BOOK: got ', book.type, book.url);
+
+        this.aliasContext.injectAliasList(book.alias);
+
+    }
+
+    this.loadTraits();
+
+};
+
+
+Cog.prototype.loadTraits = function loadTraits(){
+
+    const urls = this.traitUrls = this.aliasContext.freshUrls(this.script.traits);
+
+    if(urls.length){
+        this.scriptMonitor = new ScriptMonitor(urls, this.build.bind(this));
+    } else {
+        this.build();
+    }
+
+};
+
+
+Cog.prototype.buildStates = function buildStates(){
+
+    const states = this.script.states;
+    const len = states.length;
+
+    for(let i = 0; i < len; ++i){
+
+        const def = states[i];
+        const state = this.scope.state(def.name);
+
+        if(def.hasValue) {
+
+            const value = typeof def.value === 'function'
+                ? def.value.call(this.script)
+                : def.value;
+
+            state.write(value, def.topic, true);
+        }
+
+    }
+
+    for(let i = 0; i < len; ++i){
+
+        const def = states[i];
+        const state = this.scope.state(def.name);
+        state.refresh(def.topic);
+
+    }
+
+};
+
+
+
+
+Cog.prototype.buildActions = function buildActions(){
+
+    const actions = this.script.actions;
+    const len = actions.length;
+
+    for(let i = 0; i < len; ++i){
+
+        const def = actions[i];
+        this.scope.action(def.name);
+        // also {bus, accept}
+
+
+    }
+
+};
+
+Cog.prototype.buildEvents = function buildEvents(){
+
+    const events = this.script.events;
+    const buses = this.busInstances;
+
+    for(const name in events){
+
+        const value = events[name];
+        const el = this.namedElements[name];
+
+        if(Array.isArray(value)){
+            for(let i = 0; i < value.length; ++i){
+                const bus = this.buildBusFromNyan(value[i], el);
+                buses.push(bus);
+            }
+        } else {
+            const bus = this.buildBusFromNyan(value, el);
+            buses.push(bus);
+        }
+
+    }
+
+};
+
+Cog.prototype.buildBusFromNyan = function buildBusFromNyan(nyanStr, el){
+    return this.scope.bus(nyanStr, this.script, el, this.script.methods);
+};
+
+Cog.prototype.buildBusFromFunction = function buildBusFromFunction(f, el){
+
+    //const bus = this.scope.bus()
+};
+
+Cog.prototype.buildBuses = function buildBuses(){
+
+    const buses = this.script.buses;
+    const len = buses.length;
+    const instances = this.busInstances;
+
+    for(let i = 0; i < len; ++i){
+
+        const def = buses[i];
+        const bus = this.buildBusFromNyan(def); // todo add function support not just nyan str
+        instances.push(bus);
+
+    }
+
+};
+
+Cog.prototype.buildCogs = function buildCogs(){
+
+    const cogs = this.script.cogs;
+    const children = this.children;
+    const aliasContext = this.aliasContext;
+
+    const len = cogs.length;
+    for(let i = 0; i < len; ++i){
+
+        const def = cogs[i];
+        const url = aliasContext.resolveUrl(def.url, def.root);
+        const el = this.getNamedElement(def.el);
+        const before = !!(el && def.before);
+
+        const cog = new Cog(url, el, before, this, def.config);
+        children.push(cog);
+
+    }
+
+};
+
+Cog.prototype.getNamedElement = function getNamedElement(name){
+
+    if(!name)
+        return null;
+
+    const el = this.namedElements[name];
+
+    if(!el)
+        throw new Error('Named element ' + name + ' not found in display!');
+
+    return el;
+
+};
+
+Cog.prototype.buildTraits = function buildTraits(){
+
+    const traits = this.script.traits;
+    const instances = this.traitInstances;
+
+    const len = traits.length;
+    for(let i = 0; i < len; ++i){
+        const def = traits[i]; // todo path and root instead of url/root?
+        const instance = new Trait(this, def);
+        instances.push(instance);
+        instance.script.prep();
+    }
+
+};
+
+Cog.prototype.buildMethods = function buildMethods(){
+
+    const methods = this.script.methods;
+    const script = this.script;
+
+    for(const name in methods){
+        const f = methods[name];
+        methods[name] = typeof f === 'function' ? f.bind(script) : function(){ return f;};
+    }
+
+};
+
+Cog.prototype.initTraits = function initTraits(){
+
+    const traits = this.traitInstances;
+    const len = traits.length;
+    for(let i = 0; i < len; ++i){
+        const script = traits[i].script;
+        script.init();
+    }
+
+};
+
+Cog.prototype.mountTraits = function mountTraits(){
+
+    const traits = this.traitInstances;
+    const len = traits.length;
+    for(let i = 0; i < len; ++i){
+        const script = traits[i].script;
+        script.mount();
+    }
+
+};
+
+Cog.prototype.startTraits = function startTraits(){
+
+    const traits = this.traitInstances;
+    const len = traits.length;
+    for(let i = 0; i < len; ++i){
+        const script = traits[i].script;
+        script.start();
+    }
+
+};
+
+Cog.prototype.build = function build(){ // urls loaded
+
+    // script.prep is called earlier
+    this.buildMethods();
+    this.buildTraits(); // calls prep on all traits
+    this.buildStates();
+    this.buildActions();
+
+    this.script.init();
+
+    this.initTraits(); // calls init on all traits
+    this.mount(); // mounts display, calls script.mount, then mount for all traits
+
+    this.buildBuses();
+    this.buildEvents();
+    this.buildCogs(); // placeholders for direct children, async loads possible
+    this.killPlaceholder();
+    this.start(); // calls start for all traits
+
+};
+
+
+Cog.prototype.mount = function mount(){
+
+    this.mountDisplay();
+    this.script.mount();
+    this.mountTraits();
+
+};
+
+Cog.prototype.start = function start(){
+
+    this.script.start();
+    this.startTraits();
+
+};
+
+const Muta = {};
+const NOOP = function(){};
+const TRUE = function(){ return true;};
+
+Muta.init = function init(el, url){
+
+    url = PathResolver.resolveUrl(null, url);
+    return new Cog(url, el);
+
+};
+
+const defaultMethods = ['prep','init','mount','start','dismount','destroy'];
+
+const defaultCogProps = {
+
+    type: 'cog',
+    config: null,
+    api: null,
+    cogs: [],
+    traits: [],
+    states: [], // by state name
+    actions: [], // by action name
+    buses: [],
+    books: [],
+    events: {}, // by el name
+    methods: {},
+    els: {}
+
+};
+
+
+function createWhiteList(v){
+
+    if(typeof v === 'function') // custom acceptance function
+        return v;
+
+    if(Array.isArray(v)) {
+        return function (x) {
+            return v.indexOf(x) !== -1;
+        }
+    }
+
+    return TRUE;
+}
+
+function prepStateDefs(states){
+
+    const len = states.length;
+    const list = [];
+
+    for(let i = 0; i < len; ++i){
+
+        const def = states[i];
+        const specificName = def.specificName = def.name;
+        def.hasValue = def.hasOwnProperty('value');
+        def.hasAccept = def.hasOwnProperty('accept');
+        def.value = def.hasValue && def.value;
+        def.accept = def.hasAccept ? createWhiteList(def.hasAccept) : NOOP;
+        const hasColon = specificName.indexOf(':') === -1;
+        def.topic = hasColon ? null : specificName.substr(i+1);
+        def.name = hasColon ? specificName : specificName.substring(0, i);
+
+        list.push(def);
+
+    }
+
+    return list;
+
+}
+
+
+
 Muta.cog = function cog(def){
 
-    def.__type = 'cog';
+    for(const prop in defaultCogProps){
+        def[prop] = def.hasOwnProperty(prop) ? def[prop] : defaultCogProps[prop];
+    }
+
+    def.states = prepStateDefs(def.states);
+
+    for(let i = 0; i < defaultMethods.length; i++){
+        const name = defaultMethods[i];
+        def[name] = def[name] || NOOP;
+    }
+
     ScriptLoader.currentScript = def;
 
 };
 
+
 Muta.trait = function trait(def){
 
-    def.__type = 'trait';
+    def.type = 'trait';
+    def.config = null;
+    def.cog = null; // becomes cog script instance
+
+    for(let i = 0; i < defaultMethods.length; i++){
+        const name = defaultMethods[i];
+        def[name] = def[name] || NOOP;
+    }
+
     ScriptLoader.currentScript = def;
 
 };
 
 Muta.book = function book(def){
 
-    def.__type = 'book';
+    def.type = 'book';
     ScriptLoader.currentScript = def;
 
 };

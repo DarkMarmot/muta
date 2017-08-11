@@ -3,17 +3,18 @@
 <head>
     <script src="./js/muta.umd.js" ></script>
 </head>
+<body>
+
+<div id="moo"></div>
 
 <script>
 
-    const paths = ['./js/test.js','./js/test3.js','./js/test2.js'];
-    const fullPaths = paths.map(function(p){ return Muta.PR.resolveFile(null,p);});
+    Muta.init(document.querySelector('#moo'),  './js/test.js');
 
-    Muta.getScriptMonitor(fullPaths, ready);
-
-    function ready(){
-        console.log('got em!');
-    }
 </script>
+
+
+
+</body>
 
 </html>

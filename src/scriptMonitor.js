@@ -1,6 +1,8 @@
 
 import ScriptLoader from './scriptLoader.js';
 
+// todo add ability to share this among cogs, add additional paths with new callback
+// thus entire trees can mount at once
 
 function ScriptMonitor(paths, callback){
 

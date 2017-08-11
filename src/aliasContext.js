@@ -1,50 +1,94 @@
 
 import PathResolver from './pathResolver.js';
+import ScriptLoader from './scriptLoader.js';
 
 // whenever new aliases or valves (limiting access to aliases) are encountered,
-// a new aliasContext is created and used to resolve files and directories.
+// a new aliasContext is created and used to resolve urls and directories.
 // it inherits the aliases from above and then extends or limits those.
 //
-// the resolveFile and resolveDir methods determine a path from a file and/or
+// the resolveUrl and resolveRoot methods determine a path from a url and/or
 // directory combination (either can be an alias). if no directory is
-// given -- and the file or alias is not an absolute path -- then a relative path
-// is generated from the current file (returning a new absolute path).
+// given -- and the url or alias is not an absolute path -- then a relative path
+// is generated from the current url (returning a new absolute path).
 //
 // (all method calls are cached here for performance reasons)
 
-const EMPTY = {};
+function AliasContext(sourceRoot, aliasMap, valveMap){
 
-function AliasContext(sourceDir, aliasMap, valveMap, from){
-
-    const baseAliasMap = from // another base context
-        ? restrict(copy(from.aliasMap), from.valveMap)
-        : EMPTY;
-
-    this.sourceDir = sourceDir;
-    this.aliasMap = copy(aliasMap, baseAliasMap);
-    this.valveMap = valveMap || EMPTY;
-    this.fileCache = {};
-    this.dirCache = {};
+    this.sourceRoot = sourceRoot;
+    this.aliasMap = aliasMap ? restrict(copy(aliasMap), valveMap) : {};
+    this.urlCache = {}; // 2 level cache (first root, then url)
+    this.rootCache = {}; // 2 level cache (first root, then url)
+    this.shared = false; // shared once used by another lower cog
 
 }
 
-AliasContext.prototype.resolveFile = function resolveFile(url, base){
+AliasContext.prototype.clone = function(){
+    return new AliasContext(this.sourceRoot, this.aliasMap);
+};
 
-    const cache = this.fileCache;
-    base = base || this.sourceDir || '';
-    const baseCache = cache[base] = cache[base] || {};
-    return baseCache[url] = baseCache[url] ||
-        PathResolver.resolveFile(this.aliasMap, url, base);
+
+AliasContext.prototype.restrictAliasList = function(valveMap){
+    this.aliasMap = restrict(this.aliasMap, valveMap);
+    return this;
+};
+
+AliasContext.prototype.injectAlias = function(alias){
+    this.aliasMap[alias.name] = this.resolveUrl(alias.url, alias.root);
+    return this;
+};
+
+AliasContext.prototype.injectAliasList = function(aliasList){
+    for(let i = 0; i < aliasList.length; i++){
+        this.injectAlias(aliasList[i]);
+    }
+    return this;
+};
+
+// given a list of objects with url and root, get urls not yet downloaded
+
+AliasContext.prototype.freshUrls = function freshUrls(list) {
+
+    const result = [];
+
+    if(!list)
+        return result;
+
+    for(let i = 0; i < list.length; i++){
+        const url = this.itemToUrl(list[i]);
+        if(!ScriptLoader.has(url) && result.indexOf(url) === -1)
+            result.push(url);
+    }
+
+    return result;
 
 };
 
-AliasContext.prototype.resolveDir = function resolveDir(url, base){
 
-    const cache = this.dirCache;
-    base = base || this.sourceDir || '';
+
+
+AliasContext.prototype.itemToUrl = function applyUrl(item) {
+    return this.resolveUrl(item.url, item.root);
+};
+
+
+AliasContext.prototype.resolveUrl = function resolveUrl(url, root){
+
+    const cache = this.urlCache;
+    root = root || this.sourceRoot || '';
+    const baseCache = cache[root] = cache[root] || {};
+    return baseCache[url] = baseCache[url] ||
+        PathResolver.resolveUrl(this.aliasMap, url, root);
+
+};
+
+AliasContext.prototype.resolveRoot = function resolveRoot(url, base){
+
+    const cache = this.rootCache;
+    base = base || this.sourceRoot || '';
     const baseCache = cache[base] = cache[base] || {};
     return baseCache[url] = baseCache[url] ||
-        PathResolver.resolveDir(this.aliasMap, url, base);
+        PathResolver.resolveRoot(this.aliasMap, url, base);
 
 };
 

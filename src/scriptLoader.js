@@ -5,7 +5,7 @@ const ScriptLoader = {};
 const status = { loaded: {}, failed: {}, fetched: {}};
 const cache = {};
 
-const listenersByFile = {}; // loaded only, use init timeouts to request again
+const listenersByUrl = {}; // loaded only, use init timeouts to request again
 
 
 function cleanup(e){
@@ -39,24 +39,24 @@ ScriptLoader.onLoad = function onLoad(e){
     status.loaded[src] = true;
 
     cache[src] = ScriptLoader.currentScript;
-    ScriptLoader.currentScript.__file = src;
-    ScriptLoader.currentScript.__dir = toDir(src);
+    ScriptLoader.currentScript.url = src;
+    ScriptLoader.currentScript.root = toRoot(src);
 
     console.log(cache);
     cleanup(e);
 
-    const listeners = listenersByFile[src] || [];
+    const listeners = listenersByUrl[src] || [];
     const len = listeners.length;
     for(let i = 0; i < len; ++i){
         const f = listeners[i];
         f.call(null, src);
     }
 
-    listenersByFile[src] = [];
+    listenersByUrl[src] = [];
 
 };
 
-ScriptLoader.read = function script(path){
+ScriptLoader.read = function read(path){
     return cache[path];
 };
 
@@ -69,7 +69,7 @@ ScriptLoader.request = function request(path, callback){
     if(status.loaded[path])
         return callback.call(null, path);
 
-    const listeners = listenersByFile[path] = listenersByFile[path] || [];
+    const listeners = listenersByUrl[path] = listenersByUrl[path] || [];
     const i = listeners.indexOf(callback);
     if(i === -1){
         listeners.push(callback);
@@ -97,7 +97,7 @@ ScriptLoader.load = function(path){
 
 };
 
-function toDir(path){
+function toRoot(path){
     const i = path.lastIndexOf('/');
     return path.substring(0, i + 1);
 }

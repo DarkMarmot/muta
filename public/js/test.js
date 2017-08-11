@@ -10,7 +10,7 @@ Muta.cog({
     cogs: [
 
         {url: 'cow.js', el: 'bunny', put: 'after'},
-        {url: 'dog.js', el: 'bunny'},
+        {url: 'frog.js', el: 'bunny', before: true},
         {url: 'dog.js', config: {say: 'puppy'}}
 
     ],
@@ -19,16 +19,15 @@ Muta.cog({
         {url: 'meow.js'}
     ],
 
-    states: {
-        puppy: 5,
-        kitty: 'whiskers',
-        gar: 19
-    },
+    states: [
+        {name: 'puppy', value: function(){ this.methods.add1(5);} },
+        {name: 'kitty', value: 'whiskers'},
+        {name: 'gar', value: 19}
+    ],
 
-    actions: {
-        'meow_cmd': true // bus: '',
-    },
-
+    actions: [
+        {name:'meow_cmd'}
+    ],
 
 
     events: {
@@ -48,8 +47,10 @@ Muta.cog({
     methods: {
         hop: function(msg){ console.log('method hop - ', msg, this);},
         add1: function(n){
-            console.log('ADD');
-            return n + 1;
+
+            n = n + 10;
+            console.log('ADD', n, this);
+            return n;
         }
     }
 

@@ -47,6 +47,7 @@ Cog.prototype.usePlaceholder = function() {
             this.el.appendChild(this.placeholder);
         }
     } else {
+
         this.parent.placeholder.parentNode
             .insertBefore(this.placeholder, this.parent.placeholder);
     }
@@ -191,16 +192,29 @@ Cog.prototype.loadTraits = function loadTraits(){
 Cog.prototype.buildStates = function buildStates(){
 
     const states = this.script.states;
+    const len = states.length;
 
-    for(const k in states){
+    for(let i = 0; i < len; ++i){
 
-        const value = states[k];
-        const i = k.indexOf(':');
-        const topic = i === -1 ? null : k.substr(i+1);
-        const name = i === -1 ? k : k.substring(0, i);
+        const def = states[i];
+        const state = this.scope.state(def.name);
 
-        const state = this.scope.state(name);
-        state.write(value, topic || null, true);
+        if(def.hasValue) {
+
+            const value = typeof def.value === 'function'
+                ? def.value.call(this.script)
+                : def.value;
+
+            state.write(value, def.topic, true);
+        }
+
+    }
+
+    for(let i = 0; i < len; ++i){
+
+        const def = states[i];
+        const state = this.scope.state(def.name);
+        state.refresh(def.topic);
 
     }
 
@@ -212,11 +226,14 @@ Cog.prototype.buildStates = function buildStates(){
 Cog.prototype.buildActions = function buildActions(){
 
     const actions = this.script.actions;
+    const len = actions.length;
 
-    for(const name in actions){
+    for(let i = 0; i < len; ++i){
 
-        const validator = actions[name]; // todo implement as functor filter
-        this.scope.action(name);
+        const def = actions[i];
+        this.scope.action(def.name);
+        // also {bus, accept}
+
 
     }
 
@@ -231,8 +248,16 @@ Cog.prototype.buildEvents = function buildEvents(){
 
         const value = events[name];
         const el = this.namedElements[name];
-        const bus = this.buildBusFromNyan(value, el);
-        buses.push(bus);
+
+        if(Array.isArray(value)){
+            for(let i = 0; i < value.length; ++i){
+                const bus = this.buildBusFromNyan(value[i], el);
+                buses.push(bus);
+            }
+        } else {
+            const bus = this.buildBusFromNyan(value, el);
+            buses.push(bus);
+        }
 
     }
 
@@ -276,6 +301,7 @@ Cog.prototype.buildCogs = function buildCogs(){
         const url = aliasContext.resolveUrl(def.url, def.root);
         const el = this.getNamedElement(def.el);
         const before = !!(el && def.before);
+
         const cog = new Cog(url, el, before, this, def.config);
         children.push(cog);
 
@@ -297,7 +323,7 @@ Cog.prototype.getNamedElement = function getNamedElement(name){
 
 };
 
-Cog.prototype.buildTraits = function buildData(){
+Cog.prototype.buildTraits = function buildTraits(){
 
     const traits = this.script.traits;
     const instances = this.traitInstances;
@@ -312,6 +338,17 @@ Cog.prototype.buildTraits = function buildData(){
 
 };
 
+Cog.prototype.buildMethods = function buildMethods(){
+
+    const methods = this.script.methods;
+    const script = this.script;
+
+    for(const name in methods){
+        const f = methods[name];
+        methods[name] = typeof f === 'function' ? f.bind(script) : function(){ return f;};
+    }
+
+};
 
 Cog.prototype.initTraits = function initTraits(){
 
@@ -349,14 +386,18 @@ Cog.prototype.startTraits = function startTraits(){
 Cog.prototype.build = function build(){ // urls loaded
 
     // script.prep is called earlier
+    this.buildMethods();
     this.buildTraits(); // calls prep on all traits
     this.buildStates();
     this.buildActions();
 
     this.script.init();
+
     this.initTraits(); // calls init on all traits
-    this.buildBuses();
     this.mount(); // mounts display, calls script.mount, then mount for all traits
+
+    this.buildBuses();
+    this.buildEvents();
     this.buildCogs(); // placeholders for direct children, async loads possible
     this.killPlaceholder();
     this.start(); // calls start for all traits
@@ -367,15 +408,12 @@ Cog.prototype.build = function build(){ // urls loaded
 Cog.prototype.mount = function mount(){
 
     this.mountDisplay();
-    this.buildEvents();
     this.script.mount();
     this.mountTraits();
 
 };
 
 Cog.prototype.start = function start(){
-
-    console.log('start me!', this);
 
     this.script.start();
     this.startTraits();

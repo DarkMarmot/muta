@@ -1,0 +1,21 @@
+
+.page {
+    width: 100%;
+    height: 100%;
+    background: deeppink;
+    margin: 0;
+    padding: 0;
+}
+
+.main {
+
+    background: hotpink;
+    margin: 4px;
+    padding: 0;
+}
+
+.header {
+    width: 100%;
+    height: 60px;
+    background: darkgoldenrod;
+}

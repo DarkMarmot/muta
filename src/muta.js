@@ -19,9 +19,11 @@ const defaultMethods = ['prep','init','mount','start','dismount','destroy'];
 
 const defaultCogProps = {
 
+    id: 0,
     type: 'cog',
     config: null,
     api: null,
+    alias: [],
     cogs: [],
     traits: [],
     states: [], // by state name

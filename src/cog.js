@@ -5,10 +5,13 @@ import ScriptLoader from './scriptLoader.js';
 import Placeholder from './placeholder.js';
 import Trait from './trait.js';
 import Catbus from './catbus.es.js';
+import Gear from './gear.js';
 
+let _id = 0;
 
 function Cog(url, el, before, parent, config){
 
+    this.id = ++_id;
     this.placeholder = null;
     this.el = el; // ref element
     this.before = !!before; // el appendChild or insertBefore
@@ -77,7 +80,7 @@ Cog.prototype.mountDisplay = function() {
     const named = frag.querySelectorAll('[name]');
     const len = named.length;
     const hash = this.namedElements;
-    const scriptEls = this.script.els;
+    const scriptEls = this.script.els = {};
 
     for(let i = 0; i < len; ++i){
         const el = named[i];
@@ -85,6 +88,8 @@ Cog.prototype.mountDisplay = function() {
         hash[name] = el;
         scriptEls[name] = el;
     }
+
+    console.log(this.id, this);
 
     this.elements = [].slice.call(frag.childNodes, 0);
     this.placeholder.parentNode.insertBefore(frag, this.placeholder);
@@ -106,6 +111,8 @@ Cog.prototype.load = function() {
 Cog.prototype.onScriptReady = function() {
 
     this.script = Object.create(ScriptLoader.read(this.url));
+    this.script.id = this.id;
+    this.script.config = this.config;
     this.root = this.script.root;
     this.prep();
 
@@ -140,13 +147,20 @@ Cog.prototype.prep = function(){
 
 Cog.prototype.loadBooks = function loadBooks(){
 
+    if(this.script.books.length === 0) {
+        this.loadTraits();
+        return;
+    }
+
     const urls = this.bookUrls = this.aliasContext.freshUrls(this.script.books);
 
-    if(urls.length){
+    if (urls.length) {
         this.scriptMonitor = new ScriptMonitor(urls, this.readBooks.bind(this));
     } else {
-        this.loadTraits()
+        this.readBooks()
     }
+
+
 
 };
 
@@ -155,7 +169,7 @@ Cog.prototype.loadBooks = function loadBooks(){
 
 Cog.prototype.readBooks = function readBooks() {
 
-    const urls = this.bookUrls;
+    const urls = this.script.books;
 
     if(this.aliasContext.shared) // need a new context
         this.aliasContext = this.aliasContext.clone();
@@ -247,7 +261,7 @@ Cog.prototype.buildEvents = function buildEvents(){
     for(const name in events){
 
         const value = events[name];
-        const el = this.namedElements[name];
+        const el = this.script.els[name];
 
         if(Array.isArray(value)){
             for(let i = 0; i < value.length; ++i){
@@ -298,12 +312,18 @@ Cog.prototype.buildCogs = function buildCogs(){
     for(let i = 0; i < len; ++i){
 
         const def = cogs[i];
-        const url = aliasContext.resolveUrl(def.url, def.root);
         const el = this.getNamedElement(def.el);
         const before = !!(el && def.before);
 
-        const cog = new Cog(url, el, before, this, def.config);
-        children.push(cog);
+        if(def.type === 'gear') {
+            const gear = new Gear(def.url, el, before, this, def.config);
+            children.push(gear);
+        } else {
+            const url = aliasContext.resolveUrl(def.url, def.root);
+            const cog = new Cog(url, el, before, this, def.config);
+            children.push(cog);
+        }
+
 
     }
 
@@ -342,10 +362,11 @@ Cog.prototype.buildMethods = function buildMethods(){
 
     const methods = this.script.methods;
     const script = this.script;
+    script.methods = {};
 
     for(const name in methods){
         const f = methods[name];
-        methods[name] = typeof f === 'function' ? f.bind(script) : function(){ return f;};
+        script.methods[name] = typeof f === 'function' ? f.bind(script) : function(){ return f;};
     }
 
 };
@@ -417,6 +438,29 @@ Cog.prototype.start = function start(){
 
     this.script.start();
     this.startTraits();
+
+};
+
+Cog.prototype.destroy = function(){
+
+    if(this.placeholder){
+        this.killPlaceholder();
+    } else {
+
+        const len = this.elements.length;
+        for(let i = 0; i < len; ++i){
+            const e = this.elements[i];
+            e.parentNode.removeChild(e);
+        }
+    }
+
+    const len = this.children.length;
+    for(let i = 0; i < len; ++i){
+        const c = this.children[i];
+        c.destroy();
+    }
+
+    this.children = null;
 
 };
 

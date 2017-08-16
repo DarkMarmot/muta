@@ -674,9 +674,8 @@ FilterStream.prototype.handle = function filterHandle(msg, source, topic) {
 
 NOOP_STREAM.addStubs(FilterStream);
 
-function IS_EQUAL(a, b) { return a === b; }
-
-
+function IS_PRIMITIVE_EQUAL(a, b) {
+    return a === b && typeof a !== 'object' && typeof a !== 'function'; }
 function SkipStream(name) {
 
     this.name = name;
@@ -694,7 +693,7 @@ SkipStream.prototype.handle = function handle(msg, source, topic) {
         this.msg = msg;
         this.next.handle(msg, source, topic);
 
-    } else if (!IS_EQUAL(this.msg, msg)) {
+    } else if (!IS_PRIMITIVE_EQUAL(this.msg, msg)) {
 
         this.msg = msg;
         this.next.handle(msg, source, topic);
@@ -3806,9 +3805,11 @@ function Gear(url, el, before, parent, config){
 
     this.id = ++_id$1;
     this.placeholder = null;
+    this.head = null;
+
     this.el = el; // ref element
     this.before = !!before; // el appendChild or insertBefore
-
+    this.elements = [];
     this.children = [];
     this.parent = parent;
     this.scope = parent.scope.createChild();
@@ -3816,12 +3817,12 @@ function Gear(url, el, before, parent, config){
     this.config = config || {};
     this.aliasContext = parent.aliasContext;
 
-    const nyan = url + ' | *createCog';
-    this.bus = this.scope.bus(nyan, this);
 
     this.usePlaceholder();
 
-    this.bus.pull();
+    const nyan = url + ' | *createCog';
+    this.bus = this.scope.bus(nyan, this).pull();
+
 
 }
 
@@ -3865,7 +3866,7 @@ Gear.prototype.createCog = function createCog(msg){
     if(children.length){
 
         const oldCog = children[0];
-        const el = oldCog.elements[0]; // todo recurse first element for virtual cog
+        const el = oldCog.getFirstElement(); //oldCog.elements[0]; // todo recurse first element for virtual cog
         const cog = new Cog(url, el, true, this, this.config);
         children.push(cog);
         children.shift(); // todo destroy
@@ -3883,17 +3884,58 @@ Gear.prototype.createCog = function createCog(msg){
 
 };
 
+Gear.prototype.hasDisplayElement = function hasDisplayElement(){
+    return !!(this.placeholder || this.elements.length > 0);
+};
 
-Gear.prototype.destroy = Cog.prototype.destroy;
 
-let _id = 0;
+Gear.prototype.getFirstElement = function(){
 
-function Cog(url, el, before, parent, config){
+    let c = this;
+    while(c && !c.placeholder && c.elements.length === 0){
+        c = c.head;
+    }
+    return c.placeholder || c.elements[0];
 
-    this.id = ++_id;
+};
+
+
+Gear.prototype.destroy =  function(){
+
+    const len = this.children.length;
+    for(let i = 0; i < len; ++i){
+        const c = this.children[i];
+        c.destroy();
+    }
+
+    if(this.placeholder){
+        this.killPlaceholder();
+    } else {
+
+        const len = this.elements.length;
+        for(let i = 0; i < len; ++i){
+            const e = this.elements[i];
+            e.parentNode.removeChild(e);
+        }
+    }
+
+
+
+    this.children = [];
+
+};
+
+let _id$2 = 0;
+
+function Chain(url, el, before, parent, config, sourceName, keyField){
+
+    this.id = ++_id$2;
+    this.firstElement = null;
+    this.head = null;
     this.placeholder = null;
     this.el = el; // ref element
     this.before = !!before; // el appendChild or insertBefore
+    this.elements = [];
     this.domElements = [];
     this.namedElements = {};
     this.children = [];
@@ -3903,6 +3945,297 @@ function Cog(url, el, before, parent, config){
     this.root = '';
     this.script = null;
     this.config = config || {};
+    this.scriptMonitor = null;
+    this.aliasValveMap = null;
+    this.aliasContext = null;
+    this.sourceName = sourceName;
+    this.keyField = keyField;
+    this.bus = null;
+
+    this.usePlaceholder();
+    this.load();
+
+}
+
+Chain.prototype.usePlaceholder = function() {
+
+
+    this.placeholder = Placeholder.take();
+
+    if(this.el) {
+        if (this.before) {
+            this.el.parentNode.insertBefore(this.placeholder, this.el);
+        } else {
+            this.el.appendChild(this.placeholder);
+        }
+    } else {
+
+        this.parent.placeholder.parentNode
+            .insertBefore(this.placeholder, this.parent.placeholder);
+    }
+
+};
+
+Chain.prototype.killPlaceholder = function() {
+
+    if(!this.placeholder)
+        return;
+
+    Placeholder.give(this.placeholder);
+    this.placeholder = null;
+
+};
+
+
+Chain.prototype.load = function() {
+
+    if(ScriptLoader.has(this.url)){
+        this.onScriptReady();
+    } else {
+        ScriptLoader.request(this.url, this.onScriptReady.bind(this));
+    }
+
+};
+
+Chain.prototype.onScriptReady = function() {
+
+    this.script = Object.create(ScriptLoader.read(this.url));
+    this.script.id = this.id;
+    this.script.config = this.config;
+    this.root = this.script.root;
+    this.prep();
+
+};
+
+
+Chain.prototype.prep = function(){
+
+    const parent = this.parent;
+    const aliasValveMap = parent ? parent.aliasValveMap : null;
+    const aliasList = this.script.alias;
+
+    if(parent && parent.root === this.root && !aliasList && !aliasValveMap){
+        // same relative path, no new aliases and no valves, reuse parent context
+        this.aliasContext = parent.aliasContext;
+        this.aliasContext.shared = true;
+    } else {
+        // new context, apply valves from parent then add aliases from cog
+        this.aliasContext = parent
+            ? parent.aliasContext.clone()
+            : new AliasContext(this.root); // root of application
+        this.aliasContext.restrictAliasList(aliasValveMap);
+        this.aliasContext.injectAliasList(aliasList);
+    }
+
+    this.loadBooks();
+
+};
+
+
+
+Chain.prototype.loadBooks = function loadBooks(){
+
+    if(this.script.books.length === 0) {
+        this.loadTraits();
+        return;
+    }
+
+    const urls = this.aliasContext.freshUrls(this.script.books);
+
+    if (urls.length) {
+        this.scriptMonitor = new ScriptMonitor(urls, this.readBooks.bind(this));
+    } else {
+        this.readBooks();
+    }
+
+
+
+};
+
+
+
+
+Chain.prototype.readBooks = function readBooks() {
+
+    const urls = this.script.books;
+
+    if(this.aliasContext.shared) // need a new context
+        this.aliasContext = this.aliasContext.clone();
+
+    for (let i = 0; i < urls.length; ++i) {
+
+        const url = urls[i];
+        const book = ScriptLoader.read(url);
+        if(book.type !== 'book')
+            console.log('EXPECTED BOOK: got ', book.type, book.url);
+
+        this.aliasContext.injectAliasList(book.alias);
+
+    }
+
+    this.loadTraits();
+
+};
+
+
+Chain.prototype.loadTraits = function loadTraits(){
+
+    const urls = this.aliasContext.freshUrls(this.script.traits);
+
+    if(urls.length){
+        this.scriptMonitor = new ScriptMonitor(urls, this.build.bind(this));
+    } else {
+        this.build();
+    }
+
+};
+
+
+
+Chain.prototype.getNamedElement = function getNamedElement(name){
+
+    if(!name)
+        return null;
+
+    const el = this.namedElements[name];
+
+    if(!el)
+        throw new Error('Named element ' + name + ' not found in display!');
+
+    return el;
+
+};
+
+Chain.prototype.build = function build(){ // urls loaded
+
+    const nyan = this.sourceName + ' | *buildCogsByIndex';
+    this.bus = this.scope.bus(nyan, this).pull();
+
+};
+
+
+Chain.prototype.buildCogsByIndex = function buildCogsByIndex(msg){
+
+    const len = msg.length;
+    const children = this.children;
+    const childCount = children.length;
+    const updateCount = len > childCount ? childCount : len;
+
+    // update existing
+    for(let i = 0; i < updateCount; ++i){
+        const d = msg[i];
+        const c = children[i];
+        c.source.write(d);
+    }
+
+    if(len === 0 && childCount > 0){
+
+        // restore placeholder as all children gone
+        this.placeholder = this.placeholder || Placeholder.take();
+        const el = this.getFirstElement();
+        el.parentNode.insertBefore(this.placeholder, el);
+
+    }
+
+    if(childCount < len) {
+
+        const lastEl = this.getLastElement();
+        const nextEl = lastEl.nextElementSibling;
+        const parentEl = lastEl.parentNode;
+        const before = !!nextEl;
+        const el = nextEl || parentEl;
+
+        for (let i = childCount; i < len; ++i) {
+            // create cogs for new data
+            const cog = new Cog(this.url, el, before, this, this.config, i);
+            children.push(cog);
+
+        }
+
+    } else {
+
+        for (let i = childCount - 1; i >= len; --i) {
+            // remove cogs without corresponding data
+            children[i].destroy();
+            children.splice(i, 1);
+        }
+    }
+
+
+
+
+};
+
+Chain.prototype.getFirstElement = function(){
+
+    let c = this;
+    while(c && !c.placeholder && c.elements.length === 0){
+        c = c.head;
+    }
+    return c.placeholder || c.elements[0];
+
+};
+
+Chain.prototype.getLastElement = function(){
+
+    let c = this;
+    while(c && !c.placeholder && c.elements.length === 0){
+        c = c.tail;
+    }
+    return c.placeholder || c.elements[c.elements.length - 1];
+
+};
+
+
+Chain.prototype.destroy = function(){
+
+    const len = this.children.length;
+    for(let i = 0; i < len; ++i){
+        const c = this.children[i];
+        c.destroy();
+    }
+
+    if(this.placeholder){
+        this.killPlaceholder();
+    } else {
+
+        const len = this.elements.length;
+        for(let i = 0; i < len; ++i){
+            const e = this.elements[i];
+            e.parentNode.removeChild(e);
+        }
+    }
+
+
+
+    this.children = [];
+
+};
+
+let _id = 0;
+
+function Cog(url, el, before, parent, config, index, key){
+
+    this.id = ++_id;
+    this.firstElement = null;
+    this.head = null;
+    this.tail = null;
+    this.placeholder = null;
+    this.el = el; // ref element
+    this.before = !!before; // el appendChild or insertBefore
+    this.elements = [];
+    this.domElements = [];
+    this.namedElements = {};
+    this.children = [];
+    this.parent = parent || null;
+    this.scope = parent ? parent.scope.createChild() : Catbus.createChild();
+    this.url = url;
+    this.root = '';
+    this.script = null;
+    this.config = config || {};
+    this.source = this.scope.state('source');
+    this.index = index;
+    this.key = key;
     this.scriptMonitor = null;
     this.aliasValveMap = null;
     this.aliasContext = null;
@@ -3930,8 +4263,9 @@ Cog.prototype.usePlaceholder = function() {
         }
     } else {
 
-        this.parent.placeholder.parentNode
-            .insertBefore(this.placeholder, this.parent.placeholder);
+            this.parent.placeholder.parentNode
+                .insertBefore(this.placeholder, this.parent.placeholder);
+
     }
 
 };
@@ -3949,7 +4283,7 @@ Cog.prototype.killPlaceholder = function() {
 
 Cog.prototype.mountDisplay = function() {
 
-    if(!this.script.display)
+    if(!this.script.display) // check for valid html node
         return;
 
     let frag = document
@@ -3972,7 +4306,7 @@ Cog.prototype.mountDisplay = function() {
 
     this.elements = [].slice.call(frag.childNodes, 0);
     this.placeholder.parentNode.insertBefore(frag, this.placeholder);
-
+    this.firstElement = this.elements[0];
 
 };
 
@@ -4193,18 +4527,32 @@ Cog.prototype.buildCogs = function buildCogs(){
         const def = cogs[i];
         const el = this.getNamedElement(def.el);
         const before = !!(el && def.before);
+        const isHead = (i === 0 && this.elements.length === 0) ||
+            (!this.head && before && this.elements.length && el === this.elements[0]);
 
         if(def.type === 'gear') {
             const gear = new Gear(def.url, el, before, this, def.config);
             children.push(gear);
+            if (isHead)
+                this.head = gear;
+        } else if (def.type === 'chain') {
+            const url = aliasContext.resolveUrl(def.url, def.root);
+            const chain = new Chain(url, el, before, this, def.config, def.source);
+            children.push(chain);
+            if (isHead)
+                this.head = chain;
         } else {
             const url = aliasContext.resolveUrl(def.url, def.root);
             const cog = new Cog(url, el, before, this, def.config);
             children.push(cog);
+            if(isHead)
+                this.head = cog;
         }
 
-
     }
+
+    if(len && !this.elements.length)
+        this.tail = children[len - 1];
 
 };
 
@@ -4304,6 +4652,30 @@ Cog.prototype.build = function build(){ // urls loaded
 
 };
 
+Cog.prototype.getFirstElement = function(){
+
+    let c = this;
+    while(c && !c.placeholder && c.elements.length === 0){
+        c = c.head;
+    }
+
+    return c.placeholder || c.elements[0];
+
+};
+
+
+Cog.prototype.getLastElement = function(){
+
+    let c = this;
+    while(c && !c.placeholder && c.elements.length === 0){
+        c = c.tail;
+    }
+    return c.placeholder || c.elements[c.elements.length - 1];
+
+};
+
+
+
 
 Cog.prototype.mount = function mount(){
 
@@ -4322,6 +4694,12 @@ Cog.prototype.start = function start(){
 
 Cog.prototype.destroy = function(){
 
+    const len = this.children.length;
+    for(let i = 0; i < len; ++i){
+        const c = this.children[i];
+        c.destroy();
+    }
+
     if(this.placeholder){
         this.killPlaceholder();
     } else {
@@ -4333,13 +4711,9 @@ Cog.prototype.destroy = function(){
         }
     }
 
-    const len = this.children.length;
-    for(let i = 0; i < len; ++i){
-        const c = this.children[i];
-        c.destroy();
-    }
 
-    this.children = null;
+
+    this.children = [];
 
 };
 

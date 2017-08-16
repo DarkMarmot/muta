@@ -5,15 +5,21 @@ import ScriptLoader from './scriptLoader.js';
 import Placeholder from './placeholder.js';
 import Trait from './trait.js';
 import Catbus from './catbus.es.js';
+import Gear from './gear.js';
+import Cog from './cog.js';
+
 
 let _id = 0;
 
-function Chain(url, el, before, parent, config){
+function Chain(url, el, before, parent, config, sourceName, keyField){
 
     this.id = ++_id;
+    this.firstElement = null;
+    this.head = null;
     this.placeholder = null;
     this.el = el; // ref element
     this.before = !!before; // el appendChild or insertBefore
+    this.elements = [];
     this.domElements = [];
     this.namedElements = {};
     this.children = [];
@@ -26,12 +32,9 @@ function Chain(url, el, before, parent, config){
     this.scriptMonitor = null;
     this.aliasValveMap = null;
     this.aliasContext = null;
-
-    this.bookUrls = null;
-    this.traitUrls = null;
-
-    this.traitInstances = [];
-    this.busInstances = [];
+    this.sourceName = sourceName;
+    this.keyField = keyField;
+    this.bus = null;
 
     this.usePlaceholder();
     this.load();
@@ -39,6 +42,7 @@ function Chain(url, el, before, parent, config){
 }
 
 Chain.prototype.usePlaceholder = function() {
+
 
     this.placeholder = Placeholder.take();
 
@@ -67,8 +71,6 @@ Chain.prototype.killPlaceholder = function() {
 };
 
 
-
-
 Chain.prototype.load = function() {
 
     if(ScriptLoader.has(this.url)){
@@ -83,21 +85,54 @@ Chain.prototype.onScriptReady = function() {
 
     this.script = Object.create(ScriptLoader.read(this.url));
     this.script.id = this.id;
+    this.script.config = this.config;
     this.root = this.script.root;
+    this.prep();
+
+};
+
+
+Chain.prototype.prep = function(){
+
+    const parent = this.parent;
+    const aliasValveMap = parent ? parent.aliasValveMap : null;
+    const aliasList = this.script.alias;
+
+    if(parent && parent.root === this.root && !aliasList && !aliasValveMap){
+        // same relative path, no new aliases and no valves, reuse parent context
+        this.aliasContext = parent.aliasContext;
+        this.aliasContext.shared = true;
+    } else {
+        // new context, apply valves from parent then add aliases from cog
+        this.aliasContext = parent
+            ? parent.aliasContext.clone()
+            : new AliasContext(this.root); // root of application
+        this.aliasContext.restrictAliasList(aliasValveMap);
+        this.aliasContext.injectAliasList(aliasList);
+    }
+
     this.loadBooks();
 
 };
 
 
+
 Chain.prototype.loadBooks = function loadBooks(){
 
-    const urls = this.bookUrls = this.aliasContext.freshUrls(this.script.books);
+    if(this.script.books.length === 0) {
+        this.loadTraits();
+        return;
+    }
 
-    if(urls.length){
+    const urls = this.aliasContext.freshUrls(this.script.books);
+
+    if (urls.length) {
         this.scriptMonitor = new ScriptMonitor(urls, this.readBooks.bind(this));
     } else {
-        this.loadTraits()
+        this.readBooks()
     }
+
+
 
 };
 
@@ -106,7 +141,7 @@ Chain.prototype.loadBooks = function loadBooks(){
 
 Chain.prototype.readBooks = function readBooks() {
 
-    const urls = this.bookUrls;
+    const urls = this.script.books;
 
     if(this.aliasContext.shared) // need a new context
         this.aliasContext = this.aliasContext.clone();
@@ -129,7 +164,7 @@ Chain.prototype.readBooks = function readBooks() {
 
 Chain.prototype.loadTraits = function loadTraits(){
 
-    const urls = this.traitUrls = this.aliasContext.freshUrls(this.script.traits);
+    const urls = this.aliasContext.freshUrls(this.script.traits);
 
     if(urls.length){
         this.scriptMonitor = new ScriptMonitor(urls, this.build.bind(this));
@@ -140,86 +175,6 @@ Chain.prototype.loadTraits = function loadTraits(){
 };
 
 
-Chain.prototype.buildStates = function buildStates(){
-
-    const states = this.script.states;
-    const len = states.length;
-
-    for(let i = 0; i < len; ++i){
-
-        const def = states[i];
-        const state = this.scope.state(def.name);
-
-        if(def.hasValue) {
-
-            const value = typeof def.value === 'function'
-                ? def.value.call(this.script)
-                : def.value;
-
-            state.write(value, def.topic, true);
-        }
-
-    }
-
-    for(let i = 0; i < len; ++i){
-
-        const def = states[i];
-        const state = this.scope.state(def.name);
-        state.refresh(def.topic);
-
-    }
-
-};
-
-
-
-
-
-Chain.prototype.buildBusFromNyan = function buildBusFromNyan(nyanStr, el){
-    return this.scope.bus(nyanStr, this.script, el, this.script.methods);
-};
-
-Chain.prototype.buildBusFromFunction = function buildBusFromFunction(f, el){
-
-    //const bus = this.scope.bus()
-};
-
-Chain.prototype.buildBuses = function buildBuses(){
-
-    const buses = this.script.buses;
-    const len = buses.length;
-    const instances = this.busInstances;
-
-    for(let i = 0; i < len; ++i){
-
-        const def = buses[i];
-        const bus = this.buildBusFromNyan(def); // todo add function support not just nyan str
-        instances.push(bus);
-
-    }
-
-};
-
-Chain.prototype.buildCogs = function buildCogs(){
-
-    const cogs = this.script.cogs;
-    const children = this.children;
-    const aliasContext = this.aliasContext;
-
-    const len = cogs.length;
-    for(let i = 0; i < len; ++i){
-
-        const def = cogs[i];
-        const url = aliasContext.resolveUrl(def.url, def.root);
-        const el = this.getNamedElement(def.el);
-        const before = !!(el && def.before);
-
-        const cog = new Cog(url, el, before, this, def.config);
-        children.push(cog);
-
-    }
-
-};
 
 Chain.prototype.getNamedElement = function getNamedElement(name){
 
@@ -237,43 +192,108 @@ Chain.prototype.getNamedElement = function getNamedElement(name){
 
 Chain.prototype.build = function build(){ // urls loaded
 
-    // bind to source, on source change, if not placeholder
-    // use it or add placeholder before first, make cogs,
-    // remove placeholder if cogs
-
-    // script.prep is called earlier
-    this.buildMethods();
-    this.buildTraits(); // calls prep on all traits
-    this.buildStates();
-    this.buildActions();
-
-    this.script.init();
-
-    this.initTraits(); // calls init on all traits
-    this.mount(); // mounts display, calls script.mount, then mount for all traits
-
-    this.buildBuses();
-    this.buildEvents();
-    this.buildCogs(); // placeholders for direct children, async loads possible
-    this.killPlaceholder();
-    this.start(); // calls start for all traits
+    const nyan = this.sourceName + ' | *buildCogsByIndex';
+    this.bus = this.scope.bus(nyan, this).pull();
 
 };
 
 
-Chain.prototype.mount = function mount(){
+Chain.prototype.buildCogsByIndex = function buildCogsByIndex(msg){
 
-    this.mountDisplay();
-    this.script.mount();
-    this.mountTraits();
+    const len = msg.length;
+    const children = this.children;
+    const childCount = children.length;
+    const updateCount = len > childCount ? childCount : len;
+
+    // update existing
+    for(let i = 0; i < updateCount; ++i){
+        const d = msg[i];
+        const c = children[i];
+        c.source.write(d);
+    }
+
+    if(len === 0 && childCount > 0){
+
+        // restore placeholder as all children gone
+        this.placeholder = this.placeholder || Placeholder.take();
+        const el = this.getFirstElement();
+        el.parentNode.insertBefore(this.placeholder, el);
+
+    }
+
+    if(childCount < len) {
+
+        const lastEl = this.getLastElement();
+        const nextEl = lastEl.nextElementSibling;
+        const parentEl = lastEl.parentNode;
+        const before = !!nextEl;
+        const el = nextEl || parentEl;
+
+        for (let i = childCount; i < len; ++i) {
+            // create cogs for new data
+            const cog = new Cog(this.url, el, before, this, this.config, i);
+            children.push(cog);
+
+        }
+
+    } else {
+
+        for (let i = childCount - 1; i >= len; --i) {
+            // remove cogs without corresponding data
+            children[i].destroy();
+            children.splice(i, 1);
+        }
+    }
+
+
+
 
 };
 
-Chain.prototype.start = function start(){
+Chain.prototype.getFirstElement = function(){
 
-    this.script.start();
-    this.startTraits();
+    let c = this;
+    while(c && !c.placeholder && c.elements.length === 0){
+        c = c.head;
+    }
+    return c.placeholder || c.elements[0];
 
 };
 
-export default Cog;
+Chain.prototype.getLastElement = function(){
+
+    let c = this;
+    while(c && !c.placeholder && c.elements.length === 0){
+        c = c.tail;
+    }
+    return c.placeholder || c.elements[c.elements.length - 1];
+
+};
+
+
+Chain.prototype.destroy = function(){
+
+    const len = this.children.length;
+    for(let i = 0; i < len; ++i){
+        const c = this.children[i];
+        c.destroy();
+    }
+
+    if(this.placeholder){
+        this.killPlaceholder();
+    } else {
+
+        const len = this.elements.length;
+        for(let i = 0; i < len; ++i){
+            const e = this.elements[i];
+            e.parentNode.removeChild(e);
+        }
+    }
+
+
+
+    this.children = [];
+
+};
+
+export default Chain;

@@ -6,15 +6,20 @@ import Placeholder from './placeholder.js';
 import Trait from './trait.js';
 import Catbus from './catbus.es.js';
 import Gear from './gear.js';
+import Chain from './chain.js';
 
 let _id = 0;
 
-function Cog(url, el, before, parent, config){
+function Cog(url, el, before, parent, config, index, key){
 
     this.id = ++_id;
+    this.firstElement = null;
+    this.head = null;
+    this.tail = null;
     this.placeholder = null;
     this.el = el; // ref element
     this.before = !!before; // el appendChild or insertBefore
+    this.elements = [];
     this.domElements = [];
     this.namedElements = {};
     this.children = [];
@@ -24,6 +29,9 @@ function Cog(url, el, before, parent, config){
     this.root = '';
     this.script = null;
     this.config = config || {};
+    this.source = this.scope.state('source');
+    this.index = index;
+    this.key = key;
     this.scriptMonitor = null;
     this.aliasValveMap = null;
     this.aliasContext = null;
@@ -51,8 +59,9 @@ Cog.prototype.usePlaceholder = function() {
         }
     } else {
 
-        this.parent.placeholder.parentNode
-            .insertBefore(this.placeholder, this.parent.placeholder);
+            this.parent.placeholder.parentNode
+                .insertBefore(this.placeholder, this.parent.placeholder);
+
     }
 
 };
@@ -70,7 +79,7 @@ Cog.prototype.killPlaceholder = function() {
 
 Cog.prototype.mountDisplay = function() {
 
-    if(!this.script.display)
+    if(!this.script.display) // check for valid html node
         return;
 
     let frag = document
@@ -93,7 +102,7 @@ Cog.prototype.mountDisplay = function() {
 
     this.elements = [].slice.call(frag.childNodes, 0);
     this.placeholder.parentNode.insertBefore(frag, this.placeholder);
-
+    this.firstElement = this.elements[0];
 
 };
 
@@ -314,18 +323,32 @@ Cog.prototype.buildCogs = function buildCogs(){
         const def = cogs[i];
         const el = this.getNamedElement(def.el);
         const before = !!(el && def.before);
+        const isHead = (i === 0 && this.elements.length === 0) ||
+            (!this.head && before && this.elements.length && el === this.elements[0]);
 
         if(def.type === 'gear') {
             const gear = new Gear(def.url, el, before, this, def.config);
             children.push(gear);
+            if (isHead)
+                this.head = gear;
+        } else if (def.type === 'chain') {
+            const url = aliasContext.resolveUrl(def.url, def.root);
+            const chain = new Chain(url, el, before, this, def.config, def.source);
+            children.push(chain);
+            if (isHead)
+                this.head = chain;
         } else {
             const url = aliasContext.resolveUrl(def.url, def.root);
             const cog = new Cog(url, el, before, this, def.config);
             children.push(cog);
+            if(isHead)
+                this.head = cog;
         }
 
-
     }
+
+    if(len && !this.elements.length)
+        this.tail = children[len - 1];
 
 };
 
@@ -425,6 +448,30 @@ Cog.prototype.build = function build(){ // urls loaded
 
 };
 
+Cog.prototype.getFirstElement = function(){
+
+    let c = this;
+    while(c && !c.placeholder && c.elements.length === 0){
+        c = c.head;
+    }
+
+    return c.placeholder || c.elements[0];
+
+};
+
+
+Cog.prototype.getLastElement = function(){
+
+    let c = this;
+    while(c && !c.placeholder && c.elements.length === 0){
+        c = c.tail;
+    }
+    return c.placeholder || c.elements[c.elements.length - 1];
+
+};
+
+
+
 
 Cog.prototype.mount = function mount(){
 
@@ -443,6 +490,12 @@ Cog.prototype.start = function start(){
 
 Cog.prototype.destroy = function(){
 
+    const len = this.children.length;
+    for(let i = 0; i < len; ++i){
+        const c = this.children[i];
+        c.destroy();
+    }
+
     if(this.placeholder){
         this.killPlaceholder();
     } else {
@@ -454,13 +507,9 @@ Cog.prototype.destroy = function(){
         }
     }
 
-    const len = this.children.length;
-    for(let i = 0; i < len; ++i){
-        const c = this.children[i];
-        c.destroy();
-    }
 
-    this.children = null;
+
+    this.children = [];
 
 };
 

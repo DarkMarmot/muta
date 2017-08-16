@@ -10,6 +10,11 @@ Muta.cog({
        console.log('dog', this);
     },
 
+    cogs: [
+        {url: 'gar.js'},
+        {url: 'gar.js', el: 'dog'}
+    ],
+
     traits: [
         {url: 'test2.js', config: { meow: 'i do not bark!'}}
     ]

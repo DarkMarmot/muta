@@ -1,19 +1,14 @@
 
-console.log('loadin cow cog!');
+//display: '<div name="frog" style="background: pink; color: white; padding: 20px;">frog appears!</div>',
 
 Muta.cog({
-    test1: 'rock!',
 
-    display: '<div name="frog" style="background: pink; color: white; padding: 20px;">frog appears!</div>',
-    init: function(){
-
-    },
 
     cogs: [
-        {url: 'dog.js', el: 'frog'},
-    ],
-
-    traits: [
-        {url: 'test2.js', config: { meow: 'i do not bark!'}}
+        {url: 'dog.js'},
+        {url: 'dog.js'},
+        {url: 'catfish', type: 'gear'}
     ]
+
+
 });

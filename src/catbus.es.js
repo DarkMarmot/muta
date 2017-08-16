@@ -668,9 +668,8 @@ FilterStream.prototype.handle = function filterHandle(msg, source, topic) {
 
 NOOP_STREAM.addStubs(FilterStream);
 
-function IS_EQUAL(a, b) { return a === b; }
-
-
+function IS_PRIMITIVE_EQUAL(a, b) {
+    return a === b && typeof a !== 'object' && typeof a !== 'function'; }
 function SkipStream(name) {
 
     this.name = name;
@@ -688,7 +687,7 @@ SkipStream.prototype.handle = function handle(msg, source, topic) {
         this.msg = msg;
         this.next.handle(msg, source, topic);
 
-    } else if (!IS_EQUAL(this.msg, msg)) {
+    } else if (!IS_PRIMITIVE_EQUAL(this.msg, msg)) {
 
         this.msg = msg;
         this.next.handle(msg, source, topic);

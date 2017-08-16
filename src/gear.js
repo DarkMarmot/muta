@@ -77,7 +77,7 @@ Gear.prototype.createCog = function createCog(msg){
         const el = oldCog.getFirstElement(); //oldCog.elements[0]; // todo recurse first element for virtual cog
         const cog = new Cog(url, el, true, this, this.config);
         children.push(cog);
-        children.shift(); // todo destroy
+        children.shift();
         oldCog.destroy();
 
     } else {
@@ -110,6 +110,8 @@ Gear.prototype.getFirstElement = function(){
 
 Gear.prototype.destroy =  function(){
 
+    this.dead = true;
+
     const len = this.children.length;
     for(let i = 0; i < len; ++i){
         const c = this.children[i];
@@ -127,8 +129,7 @@ Gear.prototype.destroy =  function(){
         }
     }
 
-
-
+    this.scope.destroy();
     this.children = [];
 
 };

@@ -455,8 +455,9 @@ function SubscribeSource(name, data, topic, canPull){
     this.data = data;
     this.topic = topic;
     this.canPull = canPull;
-    this.stream = new PassStream(name);
-    data.subscribe(this.stream, topic);
+    const stream = this.stream = new PassStream(name);
+    this.callback = function(msg, source, topic){ stream.handle(msg, source, topic); };
+    data.subscribe(this.callback, topic);
 
 }
 
@@ -484,12 +485,13 @@ SubscribeSource.prototype.emit = function emit(){
 
 };
 
+
 SubscribeSource.prototype.destroy = function destroy(){
 
-    const stream = this.stream;
+    const callback = this.callback;
     const topic = this.topic;
 
-    this.data.unsubscribe(stream, topic);
+    this.data.unsubscribe(callback, topic);
     this.dead = true;
 
 };
@@ -2820,6 +2822,7 @@ class Bus {
 
         const sources = this._sources;
         const len = sources.length;
+
         for (let i = 0; i < len; i++) {
             const s = sources[i];
             s.destroy();
@@ -3869,7 +3872,7 @@ Gear.prototype.createCog = function createCog(msg){
         const el = oldCog.getFirstElement(); //oldCog.elements[0]; // todo recurse first element for virtual cog
         const cog = new Cog(url, el, true, this, this.config);
         children.push(cog);
-        children.shift(); // todo destroy
+        children.shift();
         oldCog.destroy();
 
     } else {
@@ -3902,6 +3905,8 @@ Gear.prototype.getFirstElement = function(){
 
 Gear.prototype.destroy =  function(){
 
+    this.dead = true;
+
     const len = this.children.length;
     for(let i = 0; i < len; ++i){
         const c = this.children[i];
@@ -3919,8 +3924,7 @@ Gear.prototype.destroy =  function(){
         }
     }
 
-
-
+    this.scope.destroy();
     this.children = [];
 
 };
@@ -4189,6 +4193,8 @@ Chain.prototype.getLastElement = function(){
 
 Chain.prototype.destroy = function(){
 
+    this.dead = true;
+
     const len = this.children.length;
     for(let i = 0; i < len; ++i){
         const c = this.children[i];
@@ -4207,7 +4213,7 @@ Chain.prototype.destroy = function(){
     }
 
 
-
+    this.scope.destroy();
     this.children = [];
 
 };
@@ -4217,6 +4223,7 @@ let _id = 0;
 function Cog(url, el, before, parent, config, index, key){
 
     this.id = ++_id;
+    this.dead = false;
     this.firstElement = null;
     this.head = null;
     this.tail = null;
@@ -4694,6 +4701,8 @@ Cog.prototype.start = function start(){
 
 Cog.prototype.destroy = function(){
 
+    this.dead = true;
+
     const len = this.children.length;
     for(let i = 0; i < len; ++i){
         const c = this.children[i];
@@ -4711,8 +4720,7 @@ Cog.prototype.destroy = function(){
         }
     }
 
-
-
+    this.scope.destroy();
     this.children = [];
 
 };

@@ -14,14 +14,16 @@ Muta.cog({
     ],
 
     cogs: [
-        {url: 'header.js', root: 'COMPONENTS', el: 'app', config: {p: 'cow.js'}},
-        {url: 'cow.js', type: 'chain', el: 'app', source: 'stuff'},
-        {url: 'header.js', root: 'COMPONENTS', el: 'app', config: {p: 'frog.js'}},
+
+        {url: 'header.js', root: 'COMPONENTS', el: 'app', config: {p: 'pike.js'}},
+        {url: 'bunny.js', type: 'chain', el: 'app', source: 'stuff'},
+        {url: 'header.js', root: 'COMPONENTS', el: 'app', config: {p: 'gar.js'}},
         {url: 'puppy', type: 'gear'}
 
     ],
 
     states: [
+        {name: 'hop', value: 'cow.js'},
         {name: 'catfish', value: 'fluff.js'},
         {name: 'puppy', value: 'frog.js'},
         {name: 'appTitle', value: 'KILL LIST'},

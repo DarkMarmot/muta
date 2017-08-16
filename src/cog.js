@@ -13,6 +13,7 @@ let _id = 0;
 function Cog(url, el, before, parent, config, index, key){
 
     this.id = ++_id;
+    this.dead = false;
     this.firstElement = null;
     this.head = null;
     this.tail = null;
@@ -490,6 +491,8 @@ Cog.prototype.start = function start(){
 
 Cog.prototype.destroy = function(){
 
+    this.dead = true;
+
     const len = this.children.length;
     for(let i = 0; i < len; ++i){
         const c = this.children[i];
@@ -507,8 +510,7 @@ Cog.prototype.destroy = function(){
         }
     }
 
-
-
+    this.scope.destroy();
     this.children = [];
 
 };

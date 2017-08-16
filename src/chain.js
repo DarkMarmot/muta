@@ -273,6 +273,8 @@ Chain.prototype.getLastElement = function(){
 
 Chain.prototype.destroy = function(){
 
+    this.dead = true;
+
     const len = this.children.length;
     for(let i = 0; i < len; ++i){
         const c = this.children[i];
@@ -291,7 +293,7 @@ Chain.prototype.destroy = function(){
     }
 
 
-
+    this.scope.destroy();
     this.children = [];
 
 };

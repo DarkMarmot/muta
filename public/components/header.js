@@ -8,7 +8,7 @@ Muta.cog({
     alias: [],
 
     events: {
-        header: '@click | *p { *log } | =puppy'
+        header: '@click | *p { *log } | =hop'
     },
 
     states: [

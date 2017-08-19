@@ -1021,15 +1021,16 @@ SplitStream.prototype.withIteration = function(msg, source, topic){
 
 NOOP_STREAM.addStubs(SplitStream);
 
-function WriteStream(name, dataTopic) {
+function WriteStream(name, data, topic) {
     this.name = name;
-    this.dataTopic = dataTopic;
+    this.data = data;
+    this.topic = topic;
     this.next = NOOP_STREAM;
 }
 
 WriteStream.prototype.handle = function handle(msg, source, topic) {
 
-    this.dataTopic.handle(msg);
+    this.data.write(msg, topic);
     this.next.handle(msg, source, topic);
 
 };
@@ -2092,8 +2093,7 @@ function applyProcess(scope, bus, phrase, context, node, lookup) {
 function applyWriteProcess(bus, scope, word){
 
     const data = scope.find(word.name, !word.maybe);
-    const dataTopic = data.dataTopic(word.topic);
-    bus.write(dataTopic);
+    bus.write(data, word.topic);
 
 }
 
@@ -2290,9 +2290,9 @@ const splitStreamBuilder = function() {
     }
 };
 
-const writeStreamBuilder = function(dataTopic) {
+const writeStreamBuilder = function(data, topic) {
     return function(name) {
-        return new WriteStream(name, dataTopic);
+        return new WriteStream(name, data, topic);
     }
 };
 
@@ -2747,9 +2747,9 @@ class Bus {
 
     };
 
-    write(dataTopic) {
+    write(data, topic) {
 
-        this._createNormalFrame(writeStreamBuilder(dataTopic));
+        this._createNormalFrame(writeStreamBuilder(data, topic));
         return this;
 
     };
@@ -4309,8 +4309,6 @@ Cog.prototype.mountDisplay = function() {
         scriptEls[name] = el;
     }
 
-    console.log(this.id, this);
-
     this.elements = [].slice.call(frag.childNodes, 0);
     this.placeholder.parentNode.insertBefore(frag, this.placeholder);
     this.firstElement = this.elements[0];
@@ -4330,7 +4328,8 @@ Cog.prototype.load = function() {
 
 Cog.prototype.onScriptReady = function() {
 
-    this.script = Object.create(ScriptLoader.read(this.url));
+    const def = ScriptLoader.read(this.url);
+    this.script = Object.create(def);
     this.script.id = this.id;
     this.script.config = this.config;
     this.root = this.script.root;
@@ -4431,7 +4430,9 @@ Cog.prototype.buildStates = function buildStates(){
     for(let i = 0; i < len; ++i){
 
         const def = states[i];
-        const state = this.scope.state(def.name);
+        const state = def.open ?
+            this.scope.data(def.name) :
+            this.scope.state(def.name);
 
         if(def.hasValue) {
 
@@ -4447,14 +4448,52 @@ Cog.prototype.buildStates = function buildStates(){
     for(let i = 0; i < len; ++i){
 
         const def = states[i];
-        const state = this.scope.state(def.name);
+        const state = this.scope.data(def.name);
         state.refresh(def.topic);
 
     }
 
 };
 
+Cog.prototype.buildRelay = function buildRelays(){
 
+    const scope = this.scope;
+    const config = this.config;
+    const relays = this.script.relays;
+    const len = relays.length;
+
+    for(let i = 0; i < len; ++i){
+
+        const def = relays[i];
+
+        const actionName = def.action;
+        const stateName = def.state;
+        const reportName = def.report;
+
+        let remoteAction = actionName ? scope.find(config[actionName], true) : null;
+        let remoteState = stateName ? scope.find(config[stateName], true) : null;
+
+        let report = reportName ? scope.find(config[reportName], true) : null;
+
+        let localAction = actionName ? scope.action(actionName) : null;
+        let localState = stateName ? scope.state(stateName) : null;
+
+        if(localAction){
+            scope.action(def.action);
+            if(remoteAction){
+                scope.bus().addSubscribe(actionName, localAction).write(remoteAction.dataTopic());
+            } else if (remoteState) {
+                scope.bus().addSubscribe(actionName, localAction).write(remoteState.dataTopic());
+            }
+        }
+
+
+        // also {bus, accept}
+
+
+    }
+
+};
 
 
 Cog.prototype.buildActions = function buildActions(){
@@ -4736,26 +4775,9 @@ Muta.init = function init(el, url){
 
 };
 
-const defaultMethods = ['prep','init','mount','start','dismount','destroy'];
-
-const defaultCogProps = {
-
-    id: 0,
-    type: 'cog',
-    config: null,
-    api: null,
-    alias: [],
-    cogs: [],
-    traits: [],
-    states: [], // by state name
-    actions: [], // by action name
-    buses: [],
-    books: [],
-    events: {}, // by el name
-    methods: {},
-    els: {}
-
-};
+const defaultMethods = ['prep','init','mount','start','unmount','destroy'];
+const defaultArrays = ['alias', 'cogs', 'traits', 'states', 'actions', 'buses', 'books'];
+const defaultHashes = ['els', 'methods', 'events'];
 
 
 function createWhiteList(v){
@@ -4798,19 +4820,29 @@ function prepStateDefs(states){
 }
 
 
-
 Muta.cog = function cog(def){
 
-    for(const prop in defaultCogProps){
-        def[prop] = def.hasOwnProperty(prop) ? def[prop] : defaultCogProps[prop];
+    def.id = 0;
+    def.api = null;
+    def.config = null;
+    def.type = 'cog';
+
+    for(let i = 0; i < defaultHashes.length; i++){
+        const name = defaultHashes[i];
+        def[name] = def[name] || {};
     }
 
-    def.states = prepStateDefs(def.states);
+    for(let i = 0; i < defaultArrays.length; i++){
+        const name = defaultArrays[i];
+        def[name] = def[name] || [];
+    }
 
     for(let i = 0; i < defaultMethods.length; i++){
         const name = defaultMethods[i];
         def[name] = def[name] || NOOP;
     }
+
+    def.states = prepStateDefs(def.states);
 
     ScriptLoader.currentScript = def;
 

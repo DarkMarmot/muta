@@ -23,11 +23,11 @@ Muta.cog({
     ],
 
     states: [
-        {name: 'hop', value: 'cow.js'},
+        {name: 'hop', open: true, value: 'cow.js'},
         {name: 'catfish', value: 'fluff.js'},
         {name: 'puppy', value: 'frog.js'},
         {name: 'appTitle', value: 'KILL LIST'},
-        {name: 'stuff', value: [1,2,3,4]}
+        {name: 'stuff', open: true, value: [1,2,3,4]}
     ]
 
 });

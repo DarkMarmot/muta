@@ -15,7 +15,9 @@ Muta.cog({
         {name: 'dog', value: 'dog.js'}
     ],
     methods: {
-        p: function(){ return this.config.p; },
+        p: function(){
+            return this.config.p;
+            },
         log: function(msg){
             console.log('my msg:', msg, this);
         }

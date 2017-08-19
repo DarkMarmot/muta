@@ -1,6 +1,6 @@
 
 Muta.cog({
 
-    display: '<div style="background: green" name="gar"> gar appears! </div>',
+    display: '<button style="background: green" name="gar"> gar appears! </button>',
 
 });

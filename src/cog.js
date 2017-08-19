@@ -99,8 +99,6 @@ Cog.prototype.mountDisplay = function() {
         scriptEls[name] = el;
     }
 
-    console.log(this.id, this);
-
     this.elements = [].slice.call(frag.childNodes, 0);
     this.placeholder.parentNode.insertBefore(frag, this.placeholder);
     this.firstElement = this.elements[0];
@@ -120,7 +118,8 @@ Cog.prototype.load = function() {
 
 Cog.prototype.onScriptReady = function() {
 
-    this.script = Object.create(ScriptLoader.read(this.url));
+    const def = ScriptLoader.read(this.url);
+    this.script = Object.create(def);
     this.script.id = this.id;
     this.script.config = this.config;
     this.root = this.script.root;
@@ -167,7 +166,7 @@ Cog.prototype.loadBooks = function loadBooks(){
     if (urls.length) {
         this.scriptMonitor = new ScriptMonitor(urls, this.readBooks.bind(this));
     } else {
-        this.readBooks()
+        this.readBooks();
     }
 
 
@@ -221,7 +220,9 @@ Cog.prototype.buildStates = function buildStates(){
     for(let i = 0; i < len; ++i){
 
         const def = states[i];
-        const state = this.scope.state(def.name);
+        const state = def.open ?
+            this.scope.data(def.name) :
+            this.scope.state(def.name);
 
         if(def.hasValue) {
 
@@ -237,14 +238,67 @@ Cog.prototype.buildStates = function buildStates(){
     for(let i = 0; i < len; ++i){
 
         const def = states[i];
-        const state = this.scope.state(def.name);
+        const state = this.scope.grab(def.name);
         state.refresh(def.topic);
 
     }
 
 };
 
+Cog.prototype.buildRelay = function buildRelays(){
 
+    const scope = this.scope;
+    const config = this.config;
+    const relays = this.script.relays;
+    const len = relays.length;
+
+    for(let i = 0; i < len; ++i){
+
+        const def = relays[i];
+
+        const actionName = def.action;
+        const stateName = def.state;
+        const reportName = def.report;
+
+        const remoteActionName = actionName && config[actionName];
+        const remoteStateName = stateName && config[stateName];
+
+        let remoteAction = actionName ? scope.find(remoteActionName, true) : null;
+        let remoteState = stateName ? scope.find(remoteStateName, true) : null;
+
+        let report = reportName ? scope.find(config[reportName], true) : null;
+
+        let localAction = actionName ? scope.action(actionName) : null;
+        let localState = stateName ? scope.state(stateName) : null;
+
+        if(localState && localAction){ // defines both
+
+        }
+
+        if(localAction && !localState){ // relay defines an action
+            scope.action(def.action);
+            if(remoteAction){
+                scope.bus().addSubscribe(actionName, localAction).write(remoteAction);
+            } else if (remoteState) {
+                scope.bus().addSubscribe(actionName, localAction).write(remoteState);
+            }
+        }
+
+        if(localState){ // relay defines a state
+            scope.state(def.state);
+            if(remoteState){
+                scope.bus().addSubscribe(remoteStateName, remoteState).write(localState);
+            } else if (remoteAction) {
+                scope.bus().addSubscribe(remoteActionName, remoteAction).write(localState);
+            }
+        }
+
+        // also {bus, accept}
+
+
+    }
+
+};
 
 
 Cog.prototype.buildActions = function buildActions(){

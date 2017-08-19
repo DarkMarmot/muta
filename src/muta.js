@@ -15,26 +15,9 @@ Muta.init = function init(el, url){
 
 };
 
-const defaultMethods = ['prep','init','mount','start','dismount','destroy'];
-
-const defaultCogProps = {
-
-    id: 0,
-    type: 'cog',
-    config: null,
-    api: null,
-    alias: [],
-    cogs: [],
-    traits: [],
-    states: [], // by state name
-    actions: [], // by action name
-    buses: [],
-    books: [],
-    events: {}, // by el name
-    methods: {},
-    els: {}
-
-};
+const defaultMethods = ['prep','init','mount','start','unmount','destroy'];
+const defaultArrays = ['alias', 'cogs', 'traits', 'states', 'actions', 'buses', 'books'];
+const defaultHashes = ['els', 'methods', 'events'];
 
 
 function createWhiteList(v){
@@ -77,19 +60,29 @@ function prepStateDefs(states){
 }
 
 
-
 Muta.cog = function cog(def){
 
-    for(const prop in defaultCogProps){
-        def[prop] = def.hasOwnProperty(prop) ? def[prop] : defaultCogProps[prop];
+    def.id = 0;
+    def.api = null;
+    def.config = null;
+    def.type = 'cog';
+
+    for(let i = 0; i < defaultHashes.length; i++){
+        const name = defaultHashes[i];
+        def[name] = def[name] || {};
     }
 
-    def.states = prepStateDefs(def.states);
+    for(let i = 0; i < defaultArrays.length; i++){
+        const name = defaultArrays[i];
+        def[name] = def[name] || [];
+    }
 
     for(let i = 0; i < defaultMethods.length; i++){
         const name = defaultMethods[i];
         def[name] = def[name] || NOOP;
     }
+
+    def.states = prepStateDefs(def.states);
 
     ScriptLoader.currentScript = def;
 

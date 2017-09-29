@@ -2,13 +2,16 @@
 
 Muta.cog({
 
+    relays: [
+        {action: 'target'}
+    ],
 
     display: '<div name="header" class="header" > i am the header </div>',
 
     alias: [],
 
     events: {
-        header: '@click | *p { *log } | =hop'
+        header: '@click | *p { *log } | =target'
     },
 
     states: [
@@ -19,7 +22,7 @@ Muta.cog({
             return this.config.p;
             },
         log: function(msg){
-            console.log('my msg:', msg, this);
+          //  console.log('my msg:', msg, this);
         }
     }
 

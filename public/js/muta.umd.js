@@ -4448,14 +4448,14 @@ Cog.prototype.buildStates = function buildStates(){
     for(let i = 0; i < len; ++i){
 
         const def = states[i];
-        const state = this.scope.data(def.name);
+        const state = this.scope.grab(def.name);
         state.refresh(def.topic);
 
     }
 
 };
 
-Cog.prototype.buildRelay = function buildRelays(){
+Cog.prototype.buildRelays = function buildRelays(){
 
     const scope = this.scope;
     const config = this.config;
@@ -4470,26 +4470,43 @@ Cog.prototype.buildRelay = function buildRelays(){
         const stateName = def.state;
         const reportName = def.report;
 
-        let remoteAction = actionName ? scope.find(config[actionName], true) : null;
-        let remoteState = stateName ? scope.find(config[stateName], true) : null;
+        const remoteActionName = actionName && config[actionName];
+        const remoteStateName = stateName && config[stateName];
+
+        let remoteAction = remoteActionName ? scope.find(remoteActionName, true) : null;
+        let remoteState = remoteStateName ? scope.find(remoteStateName, true) : null;
 
         let report = reportName ? scope.find(config[reportName], true) : null;
 
         let localAction = actionName ? scope.action(actionName) : null;
         let localState = stateName ? scope.state(stateName) : null;
 
-        if(localAction){
-            scope.action(def.action);
-            if(remoteAction){
-                scope.bus().addSubscribe(actionName, localAction).write(remoteAction.dataTopic());
-            } else if (remoteState) {
-                scope.bus().addSubscribe(actionName, localAction).write(remoteState.dataTopic());
+        if(actionName && !stateName && remoteAction){ // only action goes out relay
+                scope.bus().addSubscribe(actionName, localAction).write(remoteAction);
+
+        }
+
+        if(stateName && !actionName && remoteState){ // only state comes in relay
+                scope.bus().addSubscribe(remoteStateName, remoteState).write(localState).pull();
+        }
+
+        if(actionName && stateName){ // defines both
+            if(remoteAction && remoteState){ // wire action and state (wire together above)
+                scope.bus().addSubscribe(actionName, localAction).write(remoteAction);
+                scope.bus().addSubscribe(remoteStateName, remoteState).write(localState).pull();
+            } else if (remoteAction && !remoteState){ // action to remote action to state
+                scope.bus().addSubscribe(actionName, localAction).write(remoteAction);
+                scope.bus().addSubscribe(remoteActionName, remoteAction).write(localState);
+            } else if (remoteState && !remoteAction){ // action to remote state to state
+                scope.bus().addSubscribe(actionName, localAction).write(remoteState);
+                scope.bus().addSubscribe(remoteStateName, remoteState).write(localState).pull();
+            } else { // neither configured, wire locally
+                scope.bus().addSubscribe(actionName, localAction).write(localState);
             }
         }
 
-
-        // also {bus, accept}
-
+        // todo wire with transform
+        // todo add report
 
     }
 
@@ -4681,9 +4698,10 @@ Cog.prototype.build = function build(){ // urls loaded
 
     // script.prep is called earlier
     this.buildMethods();
-    this.buildTraits(); // calls prep on all traits
+    this.buildTraits(); // calls prep on all traits -- mixes states, actions, etc
     this.buildStates();
     this.buildActions();
+    this.buildRelays();
 
     this.script.init();
 
@@ -4776,7 +4794,7 @@ Muta.init = function init(el, url){
 };
 
 const defaultMethods = ['prep','init','mount','start','unmount','destroy'];
-const defaultArrays = ['alias', 'cogs', 'traits', 'states', 'actions', 'buses', 'books'];
+const defaultArrays = ['alias', 'cogs', 'traits', 'states', 'actions', 'buses', 'books', 'relays'];
 const defaultHashes = ['els', 'methods', 'events'];
 
 

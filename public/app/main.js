@@ -15,9 +15,9 @@ Muta.cog({
 
     cogs: [
 
-        {url: 'header.js', root: 'COMPONENTS', el: 'app', config: {p: 'pike.js'}},
+        {url: 'header.js', root: 'COMPONENTS', el: 'app', config: {target: 'hop', p: 'pike.js'}},
         {url: 'bunny.js', type: 'chain', el: 'app', source: 'stuff'},
-        {url: 'header.js', root: 'COMPONENTS', el: 'app', config: {p: 'gar.js'}},
+        {url: 'header.js', root: 'COMPONENTS', el: 'app', config: {target: 'hop', p: 'gar.js'}},
         {url: 'puppy', type: 'gear'}
 
     ],
@@ -29,5 +29,13 @@ Muta.cog({
         {name: 'appTitle', value: 'KILL LIST'},
         {name: 'stuff', open: true, value: [1,2,3,4]}
     ]
+
+    // actions: {
+    //     catfish: 'fluff.js',
+    //     addPatient: '*verifyPatient | patientList',
+    // }
+
+
+
 
 });

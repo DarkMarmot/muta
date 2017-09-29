@@ -16,7 +16,7 @@ Muta.init = function init(el, url){
 };
 
 const defaultMethods = ['prep','init','mount','start','unmount','destroy'];
-const defaultArrays = ['alias', 'cogs', 'traits', 'states', 'actions', 'buses', 'books'];
+const defaultArrays = ['alias', 'cogs', 'traits', 'states', 'actions', 'buses', 'books', 'relays'];
 const defaultHashes = ['els', 'methods', 'events'];
 
 

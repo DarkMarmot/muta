@@ -3,7 +3,6 @@
 
 Muta.cog({
 
-
     cogs: [
         {url: 'dog.js'},
         {url: 'dog.js'},

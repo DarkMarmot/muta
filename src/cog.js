@@ -245,7 +245,7 @@ Cog.prototype.buildStates = function buildStates(){
 
 };
 
-Cog.prototype.buildRelay = function buildRelays(){
+Cog.prototype.buildRelays = function buildRelays(){
 
     const scope = this.scope;
     const config = this.config;
@@ -263,38 +263,40 @@ Cog.prototype.buildRelay = function buildRelays(){
         const remoteActionName = actionName && config[actionName];
         const remoteStateName = stateName && config[stateName];
 
-        let remoteAction = actionName ? scope.find(remoteActionName, true) : null;
-        let remoteState = stateName ? scope.find(remoteStateName, true) : null;
+        let remoteAction = remoteActionName ? scope.find(remoteActionName, true) : null;
+        let remoteState = remoteStateName ? scope.find(remoteStateName, true) : null;
 
         let report = reportName ? scope.find(config[reportName], true) : null;
 
         let localAction = actionName ? scope.action(actionName) : null;
         let localState = stateName ? scope.state(stateName) : null;
 
-        if(localState && localAction){ // defines both
-
-        }
-
-        if(localAction && !localState){ // relay defines an action
-            scope.action(def.action);
-            if(remoteAction){
+        if(actionName && !stateName && remoteAction){ // only action goes out relay
                 scope.bus().addSubscribe(actionName, localAction).write(remoteAction);
-            } else if (remoteState) {
-                scope.bus().addSubscribe(actionName, localAction).write(remoteState);
-            }
+
         }
 
-        if(localState){ // relay defines a state
-            scope.state(def.state);
-            if(remoteState){
-                scope.bus().addSubscribe(remoteStateName, remoteState).write(localState);
-            } else if (remoteAction) {
+        if(stateName && !actionName && remoteState){ // only state comes in relay
+                scope.bus().addSubscribe(remoteStateName, remoteState).write(localState).pull();
+        }
+
+        if(actionName && stateName){ // defines both
+            if(remoteAction && remoteState){ // wire action and state (wire together above)
+                scope.bus().addSubscribe(actionName, localAction).write(remoteAction);
+                scope.bus().addSubscribe(remoteStateName, remoteState).write(localState).pull();
+            } else if (remoteAction && !remoteState){ // action to remote action to state
+                scope.bus().addSubscribe(actionName, localAction).write(remoteAction);
                 scope.bus().addSubscribe(remoteActionName, remoteAction).write(localState);
+            } else if (remoteState && !remoteAction){ // action to remote state to state
+                scope.bus().addSubscribe(actionName, localAction).write(remoteState);
+                scope.bus().addSubscribe(remoteStateName, remoteState).write(localState).pull();
+            } else { // neither configured, wire locally
+                scope.bus().addSubscribe(actionName, localAction).write(localState);
             }
         }
 
-        // also {bus, accept}
-
+        // todo wire with transform
+        // todo add report
 
     }
 
@@ -486,9 +488,10 @@ Cog.prototype.build = function build(){ // urls loaded
 
     // script.prep is called earlier
     this.buildMethods();
-    this.buildTraits(); // calls prep on all traits
+    this.buildTraits(); // calls prep on all traits -- mixes states, actions, etc
     this.buildStates();
     this.buildActions();
+    this.buildRelays();
 
     this.script.init();
 

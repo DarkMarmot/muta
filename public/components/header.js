@@ -14,17 +14,17 @@ Muta.cog({
         header: '@click | *p { *log } | =target'
     },
 
-    states: [
-        {name: 'dog', value: 'dog.js'}
-    ],
-    methods: {
-        p: function(){
-            return this.config.p;
-            },
-        log: function(msg){
-          //  console.log('my msg:', msg, this);
-        }
-    }
+    states:
+        {dog: 'dog.js'}
+    ,
 
+    p: function() {
+        console.log('p is ', this.config.p);
+        return this.config.p;
+    }
+    ,
+    log: function(msg){
+        console.log('my msg:', msg, this);
+    }
 
 });

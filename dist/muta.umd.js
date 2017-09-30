@@ -4,380 +4,125 @@
 	(global.Muta = factory());
 }(this, (function () { 'use strict';
 
-const DATA_TYPES = {
-
-    ACTION:   'action',
-    MIRROR:   'mirror',
-    STATE:    'state',
-    COMPUTED: 'computed',
-    NONE:     'none',
-    ANY:      'any'
-
-};
-
-const reverseLookup = {};
-
-for(const p in DATA_TYPES){
-    const v = DATA_TYPES[p];
-    reverseLookup[v] = p;
+function isPrivate(name){
+    return name[0] === '_'  || (isAction(name) && name[1] === '_');
 }
 
-function isValid(type){
-    return reverseLookup.hasOwnProperty(type);
+function isAction(name){
+    return name[0] === '$';
 }
-
-function callMany(list, msg, source, topic){
-
-    const len = list.length;
-    for (let i = 0; i < len; i++) {
-        let s = list[i];
-        s.call(s, msg, source, topic);
-    }
-
-}
-
-function callNoOne(list, msg, source, topic){}
-
-function callOne(list, msg, source, topic){
-        const s = list[0];
-        s.call(s, msg, source, topic);
-}
-
-class SubscriberList {
-
-    constructor(topic, data) {
-
-        this._topic = topic;
-        this._subscribers = [];
-        this._callback = callNoOne;
-        this._used = false; // true after first msg
-        this._lastMsg = null;
-        this._lastTopic = null;
-        this._data = data;
-        this._name = data._name;
-        this._dead = false;
-
-        if(data.type === DATA_TYPES.ACTION) {
-            this.handle = this.handleAction;
-        }
-    };
-
-    get used() { return this._used; };
-    get lastMsg() { return this._lastMsg; };
-    get lastTopic() { return this._lastTopic; };
-    get data() { return this._data; };
-    get name() { return this._name; };
-    get dead() { return this._dead; };
-    get topic() { return this._topic; };
-
-    handle(msg, topic, silently){
-
-        // if(this.dead)
-        //     return;
-
-        this._used = true;
-        topic = topic || this.topic;
-        let source = this.name;
-
-        this._lastMsg = msg;
-        this._lastTopic = topic;
-
-        //let subscribers = [].concat(this._subscribers); // call original sensors in case subscriptions change mid loop
-
-        if(!silently) {
-            this._callback(this._subscribers, msg, source, topic);
-        }
-
-    };
-
-    handleAction(msg, topic){
-
-        topic = topic || this.topic;
-        let source = this.name;
-
-        //let subscribers = [].concat(this._subscribers); // call original sensors in case subscriptions change mid loop
-        this._callback(this._subscribers, msg, source, topic);
-
-    };
-
-
-    destroy(){
-
-        // if(this.dead)
-        //     return;
-
-        this._subscribers = null;
-        this._lastMsg = null;
-        this._dead = true;
-
-    };
-
-    add(watcher){
-
-        const s = typeof watcher === 'function' ? watcher : function(msg, source, topic){ watcher.handle(msg, source, topic);};
-        this._subscribers.push(s);
-        this.determineCaller();
-        return this;
-
-    };
-
-    remove(watcher){
-
-        let i = this._subscribers.indexOf(watcher);
-
-        if(i !== -1)
-            this._subscribers.splice(i, 1);
-
-        this.determineCaller();
-
-        return this;
-    };
-
-    determineCaller(){
-        const len = this._subscribers.length;
-        if(len === 0){
-            this._callback = callNoOne;
-        } else if (len === 1){
-            this._callback = callOne;
-        } else {
-            this._callback = callMany;
-        }
-
-    }
-
-}
-
-function DataTopic(data, topic, silently){
-    this.data = data;
-    this.topic = topic;
-    this.silently = !!silently;
-    this.topicSubscriberList = data._demandSubscriberList(topic);
-    this.wildcardSubscriberList = data._wildcardSubscriberList;
-}
-
-DataTopic.prototype.handle = function(msg){
-    this.topicSubscriberList.handle(msg, this.topic, this.silently);
-    this.wildcardSubscriberList.handle(msg, this.topic, this.silently);
-};
 
 class Data {
 
+    // should only be created via Scope methods
+
     constructor(scope, name, type) {
 
-        type = type || DATA_TYPES.NONE;
-
-        if(!name)
-            throw new Error('Data requires a name');
-
-        if(!isValid(type))
-            throw new Error('Invalid Data of type: ' + type);
-
-        this._scope      = scope;
-        this._name       = name;
-        this._type       = type;
-        this._dead       = false;
-        this._local      = name[0] === '_';
-
-        this._noTopicList = new SubscriberList('', this);
-        this._wildcardSubscriberList = new SubscriberList('', this);
-        this._subscriberListsByTopic = {};
+        this._scope       = scope;
+        this._action      = isAction(name);
+        this._name        = name;
+        this._dead        = false;
+        this._value       = undefined;
+        this._present     = false;  // true if a value has been received
+        this._private     = isPrivate(name);
+        this._readable    = !this._action;
+        this._writable    = true; // false when mirrored
+        this._subscribers = [];
 
     };
 
     get scope() { return this._scope; };
     get name() { return this._name; };
-    get type() { return this._type; };
     get dead() { return this._dead; };
+    get present() { return this._present; };
+    get private() { return this._private; };
+
 
     destroy(){
 
-        // if(this.dead)
-        //     this._throwDead();
-        
-        for(const list of this._subscriberListsByTopic.values()){
-            list.destroy();
-        }
-
+        this._scope = null;
+        this._subscribers = null;
         this._dead = true;
 
     };
-    
-    _demandSubscriberList(topic){
 
-        topic = topic || '';
-        let list = topic ? this._subscriberListsByTopic[topic] : this._noTopicList;
+    subscribe(listener, pull){
 
-        if(list)
-            return list;
+        this._subscribers.unshift(listener);
 
-        list = new SubscriberList(topic, this);
-        this._subscriberListsByTopic[topic] = list;
-
-        return list;
-        
-    };
-
-    verify(expectedType){
-
-        if(this.type === expectedType)
-            return this;
-
-        throw new Error('Data ' + this.name + ' requested as type ' + expectedType + ' exists as ' + this.type);
-
-    };
-
-    follow(watcher, topic){
-
-        // if(this.dead)
-        //     this._throwDead();
-
-        const list = this.subscribe(watcher, topic);
-
-        if(list.used)
-            typeof watcher === 'function' ? watcher.call(watcher, list.lastMsg, list.source, list.lastTopic) : watcher.handle(list.lastMsg, list.source, list.lastTopic);
+        if(pull && this._present)
+            listener.call(null, this._value, this._name);
 
         return this;
 
     };
 
-    subscribe(watcher, topic){
-
-        // if(this.dead)
-        //     this._throwDead();
-
-        return this._demandSubscriberList(topic).add(watcher);
-
-    };
-
-    monitor(watcher){
-
-        // if(this.dead)
-        //     this._throwDead();
-
-        this._wildcardSubscriberList.add(watcher);
-
-        return this;
-
-    };
-
-    unsubscribe(watcher, topic){
-
-        // if(this.dead)
-        //     this._throwDead();
-
-        topic = topic || '';
-        this._demandSubscriberList(topic).remove(watcher);
-        this._wildcardSubscriberList.remove(watcher);
-
-        return this;
-
-    };
-
-    // topics(){
-    //
-    //     return this._subscriberListsByTopic.keys();
-    //
-    // };
-
-    survey(){
-        // get entire key/value store by topic:lastPacket
-        throw new Error('not imp');
-
-        // const entries = this._subscriberListsByTopic.entries();
-        // const m = new Map();
-        // for (const [key, value] of entries) {
-        //     m.set(key, value.lastPacket);
-        // }
-        //
-        // return m;
-    };
+    unsubscribe(listener){
 
 
-    present(topic){
+        let i = this._subscribers.indexOf(listener);
 
-        // if(this.dead)
-        //     this._throwDead();
-
-        const subscriberList = this._demandSubscriberList(topic);
-        return subscriberList.used;
-
-    };
-
-
-    read(topic) {
-
-        // if(this.dead)
-        //     this._throwDead();
-
-        const list = this._demandSubscriberList(topic);
-        return (list.used) ? list.lastMsg : undefined;
-
-    };
-
-    dataTopic(topic, silently){
-        return new DataTopic(this, topic, silently);
-    }
-
-    silentWrite(msg, topic){
-
-        // if(this.dead)
-        //     this._throwDead();
-
-        this.write(msg, topic, true);
-
-    };
-
-
-    write(msg, topic, silently){
-
-        // todo change methods to imply if statements for perf?
-
-        // if(this.dead)
-        //     this._throwDead();
-
-        if(this.type === DATA_TYPES.MIRROR)
-            throw new Error('Mirror Data: ' + this.name + ' is read-only');
-
-        const list = this._demandSubscriberList(topic);
-        list.handle(msg, topic, silently);
-        this._wildcardSubscriberList.handle(msg, topic, silently);
-
-    };
-
-
-
-    refresh(topic){
-
-        // if(this.dead)
-        //     this._throwDead();
-
-        const list = this._demandSubscriberList(topic);
-
-        if(list.used)
-            this.write(list.lastMsg, list.lastTopic);
+        if(i !== -1)
+            this._subscribers.splice(i, 1);
 
         return this;
 
     };
 
 
-    toggle(topic){
+    silentWrite(msg){
 
-        // if(this.dead)
-        //     this._throwDead();
+        this.write(msg, true);
 
-        this.write(!this.read(topic), topic);
+    };
+
+    read(){
+
+        return this._value;
+
+    };
+
+    write(msg, silent){
+
+        _ASSERT_WRITE_ACCESS(this);
+
+        if(!this._action) { // states store the last value seen
+            this._present = true;
+            this._value = msg;
+        }
+
+        if(!silent) {
+            let i = this._subscribers.length;
+            while (i--) {
+                this._subscribers[i].call(null, msg, this._name);
+            }
+        }
+
+    };
+
+    refresh(){
+
+        if(this._present)
+            this.write(this._value);
 
         return this;
 
     };
 
-    _throwDead(){
+    toggle(){
 
-        throw new Error('Data: ' + this.name + ' is already dead.');
+        this.write(!this._value);
+
+        return this;
 
     };
 
+}
+
+
+function _ASSERT_WRITE_ACCESS(d){
+    if(!d._writable)
+        throw new Error('States accessed from below are read-only. Named: ' + d._name);
 }
 
 function NoopSource() {
@@ -409,7 +154,7 @@ function NoopStream() {
     this.name = '';
 }
 
-NoopStream.prototype.handle = function handle(msg, source, topic) {};
+NoopStream.prototype.handle = function handle(msg, source) {};
 NoopStream.prototype.reset = function reset() {};
 NoopStream.prototype.emit = function emit() {};
 
@@ -440,24 +185,23 @@ function PassStream(name) {
 
 }
 
-PassStream.prototype.handle = function passHandle(msg, source, topic) {
+PassStream.prototype.handle = function passHandle(msg, source) {
 
     const n = this.name || source;
-    this.next.handle(msg, n, topic);
+    this.next.handle(msg, n);
 
 };
 
 NOOP_STREAM.addStubs(PassStream);
 
-function SubscribeSource(name, data, topic, canPull){
+function SubscribeSource(name, data, canPull){
 
     this.name = name;
     this.data = data;
-    this.topic = topic;
     this.canPull = canPull;
     const stream = this.stream = new PassStream(name);
-    this.callback = function(msg, source, topic){ stream.handle(msg, source, topic); };
-    data.subscribe(this.callback, topic);
+    this.callback = function(msg, source){ stream.handle(msg, source); };
+    data.subscribe(this.callback);
 
 }
 
@@ -472,15 +216,12 @@ SubscribeSource.prototype.pull = function pull(){
 SubscribeSource.prototype.emit = function emit(){
 
     const data = this.data;
-    const topic = this.topic;
 
-    const present = data.present(topic);
-
-    if(present) {
+    if(data.present) {
         const stream = this.stream;
-        const msg = data.read(topic);
+        const msg = data.read();
         const source = this.name;
-        stream.handle(msg, source, topic);
+        stream.handle(msg, source);
     }
 
 };
@@ -489,9 +230,8 @@ SubscribeSource.prototype.emit = function emit(){
 SubscribeSource.prototype.destroy = function destroy(){
 
     const callback = this.callback;
-    const topic = this.topic;
 
-    this.data.unsubscribe(callback, topic);
+    this.data.unsubscribe(callback);
     this.dead = true;
 
 };
@@ -539,11 +279,11 @@ function ForkStream(name, fork) {
 
 }
 
-ForkStream.prototype.handle = function handle(msg, source, topic) {
+ForkStream.prototype.handle = function handle(msg, source) {
 
     const n = this.name;
-    this.next.handle(msg, n, topic);
-    this.fork.handle(msg, n, topic);
+    this.next.handle(msg, n);
+    this.fork.handle(msg, n);
 
 };
 
@@ -554,15 +294,13 @@ function BatchStream(name) {
     this.name = name;
     this.next = NOOP_STREAM;
     this.msg = undefined;
-    this.topic = '';
     this.latched = false;
 
 }
 
-BatchStream.prototype.handle = function handle(msg, source, topic) {
+BatchStream.prototype.handle = function handle(msg, source) {
 
     this.msg = msg;
-    this.topic = topic;
 
     if(!this.latched){
         this.latched = true;
@@ -574,10 +312,9 @@ BatchStream.prototype.handle = function handle(msg, source, topic) {
 BatchStream.prototype.emit = function emit() { // called from enqueue scheduler
 
     const msg = this.msg;
-    const topic = this.topic;
     const source = this.name;
 
-    this.next.handle(msg, source, topic);
+    this.next.handle(msg, source);
 
 };
 
@@ -586,7 +323,6 @@ BatchStream.prototype.reset = function reset() {
 
     this.latched = false;
     this.msg = undefined;
-    this.topic = '';
 
     // doesn't continue on as in default
 
@@ -602,10 +338,10 @@ function ResetStream(name, head) {
 
 }
 
-ResetStream.prototype.handle = function handle(msg, source, topic) {
+ResetStream.prototype.handle = function handle(msg, source) {
 
-    this.next.handle(msg, source, topic);
-    this.head.reset(msg, source, topic);
+    this.next.handle(msg, source);
+    this.head.reset(msg, source);
 
 };
 
@@ -622,18 +358,18 @@ function TapStream(name, f) {
     this.next = NOOP_STREAM;
 }
 
-TapStream.prototype.handle = function handle(msg, source, topic) {
+TapStream.prototype.handle = function handle(msg, source) {
 
     const n = this.name || source;
     const f = this.f;
-    f(msg, n, topic);
-    this.next.handle(msg, n, topic);
+    f(msg, n);
+    this.next.handle(msg, n);
 
 };
 
 NOOP_STREAM.addStubs(TapStream);
 
-function IDENTITY$2(msg, source, topic) { return msg; }
+function IDENTITY$2(msg, source) { return msg; }
 
 
 function MsgStream(name, f, context) {
@@ -646,10 +382,10 @@ function MsgStream(name, f, context) {
 }
 
 
-MsgStream.prototype.handle = function msgHandle(msg, source, topic) {
+MsgStream.prototype.handle = function msgHandle(msg, source) {
 
     const f = this.f;
-    this.next.handle(f.call(this.context, msg, source, topic), source, topic);
+    this.next.handle(f.call(this.context, msg, source), source);
 
 };
 
@@ -667,17 +403,20 @@ function FilterStream(name, f, context) {
 
 }
 
-FilterStream.prototype.handle = function filterHandle(msg, source, topic) {
+FilterStream.prototype.handle = function filterHandle(msg, source) {
 
     const f = this.f;
-    f.call(this.context, msg, source, topic) && this.next.handle(msg, source, topic);
+    f.call(this.context, msg, source) && this.next.handle(msg, source);
 
 };
 
 NOOP_STREAM.addStubs(FilterStream);
 
 function IS_PRIMITIVE_EQUAL(a, b) {
-    return a === b && typeof a !== 'object' && typeof a !== 'function'; }
+    return a === b && typeof a !== 'object' && typeof a !== 'function';
+}
+
+
 function SkipStream(name) {
 
     this.name = name;
@@ -687,18 +426,18 @@ function SkipStream(name) {
 
 }
 
-SkipStream.prototype.handle = function handle(msg, source, topic) {
+SkipStream.prototype.handle = function handle(msg, source) {
 
     if(!this.hasValue) {
 
         this.hasValue = true;
         this.msg = msg;
-        this.next.handle(msg, source, topic);
+        this.next.handle(msg, source);
 
     } else if (!IS_PRIMITIVE_EQUAL(this.msg, msg)) {
 
         this.msg = msg;
-        this.next.handle(msg, source, topic);
+        this.next.handle(msg, source);
 
     }
 };
@@ -714,7 +453,7 @@ function LastNStream(name, count) {
 
 }
 
-LastNStream.prototype.handle = function handle(msg, source, topic) {
+LastNStream.prototype.handle = function handle(msg, source) {
 
     const c = this.count;
     const m = this.msg;
@@ -724,11 +463,11 @@ LastNStream.prototype.handle = function handle(msg, source, topic) {
     if(m.length > c)
         m.shift();
 
-    this.next.handle(m, n, topic);
+    this.next.handle(m, n);
 
 };
 
-LastNStream.prototype.reset = function(msg, source, topic){
+LastNStream.prototype.reset = function(msg, source){
 
     this.msg = [];
     this.next.reset();
@@ -746,7 +485,7 @@ function FirstNStream(name, count) {
 
 }
 
-FirstNStream.prototype.handle = function handle(msg, source, topic) {
+FirstNStream.prototype.handle = function handle(msg, source) {
 
     const c = this.count;
     const m = this.msg;
@@ -755,11 +494,11 @@ FirstNStream.prototype.handle = function handle(msg, source, topic) {
     if(m.length < c)
         m.push(msg);
 
-    this.next.handle(m, n, topic);
+    this.next.handle(m, n);
 
 };
 
-FirstNStream.prototype.reset = function(msg, source, topic){
+FirstNStream.prototype.reset = function(msg, source){
 
     this.msg = [];
 
@@ -775,18 +514,18 @@ function AllStream(name) {
 
 }
 
-AllStream.prototype.handle = function handle(msg, source, topic) {
+AllStream.prototype.handle = function handle(msg, source) {
 
     const m = this.msg;
     const n = this.name || source;
 
     m.push(msg);
 
-    this.next.handle(m, n, topic);
+    this.next.handle(m, n);
 
 };
 
-AllStream.prototype.reset = function(msg, source, topic){
+AllStream.prototype.reset = function(msg, source){
 
     this.msg = [];
 
@@ -798,11 +537,11 @@ const FUNCTOR$1 = function(d) {
     return typeof d === 'function' ? d : function() { return d;};
 };
 
-function IMMEDIATE(msg, source, topic) { return 0; }
+function IMMEDIATE(msg, source) { return 0; }
 
-function callback(stream, msg, source, topic){
+function callback(stream, msg, source){
     const n = stream.name || source;
-    stream.next.handle(msg, n, topic);
+    stream.next.handle(msg, n);
 }
 
 function DelayStream(name, f) {
@@ -813,16 +552,16 @@ function DelayStream(name, f) {
 
 }
 
-DelayStream.prototype.handle = function handle(msg, source, topic) {
+DelayStream.prototype.handle = function handle(msg, source) {
 
-    const delay = this.f(msg, source, topic);
-    setTimeout(callback, delay, this, msg, source, topic);
+    const delay = this.f(msg, source);
+    setTimeout(callback, delay, this, msg, source);
 
 };
 
 NOOP_STREAM.addStubs(DelayStream);
 
-function BY_SOURCE(msg, source, topic) { return source; }
+function BY_SOURCE(msg, source) { return source; }
 
 const FUNCTOR$2 = function(d) {
     return typeof d === 'function' ? d : function() { return d;};
@@ -834,15 +573,14 @@ function GroupStream(name, f, seed) {
     this.f = f || BY_SOURCE;
     this.seed = arguments.length === 3 ? FUNCTOR$2(seed) : FUNCTOR$2({});
     this.next = NOOP_STREAM;
-    this.topic = undefined;
     this.msg = this.seed();
 
 }
 
-GroupStream.prototype.handle = function handle(msg, source, topic) {
+GroupStream.prototype.handle = function handle(msg, source) {
 
     const f = this.f;
-    const v = f(msg, source, topic);
+    const v = f(msg, source);
     const n = this.name || source;
     const m = this.msg;
 
@@ -854,14 +592,13 @@ GroupStream.prototype.handle = function handle(msg, source, topic) {
         }
     }
 
-    this.next.handle(m, n, topic);
+    this.next.handle(m, n);
 
 };
 
 GroupStream.prototype.reset = function reset(msg) {
 
     const m = this.msg = this.seed(msg);
-    this.topic = undefined;
     this.next.reset(m);
 
 };
@@ -880,21 +617,21 @@ function LatchStream(name, f) {
 
 }
 
-LatchStream.prototype.handle = function handle(msg, source, topic) {
+LatchStream.prototype.handle = function handle(msg, source) {
 
     const n = this.name;
 
     if(this.latched){
-        this.next.handle(msg, n, topic);
+        this.next.handle(msg, n);
         return;
     }
 
     const f = this.f;
-    const v = f(msg, source, topic);
+    const v = f(msg, source);
 
     if(v) {
         this.latched = true;
-        this.next.handle(msg, n, topic);
+        this.next.handle(msg, n);
     }
 
 };
@@ -917,15 +654,15 @@ function ScanStream(name, f) {
 }
 
 
-ScanStream.prototype.handle = function handle(msg, source, topic) {
+ScanStream.prototype.handle = function handle(msg, source) {
 
     const f = this.f;
-    this.value = this.hasValue ? f(this.value, msg, source, topic) : msg;
-    this.next.handle(this.value, source, topic);
+    this.value = this.hasValue ? f(this.value, msg, source) : msg;
+    this.next.handle(this.value, source);
 
 };
 
-ScanStream.prototype.reset = function reset(msg) {
+ScanStream.prototype.reset = function reset() {
 
     this.hasValue = false;
     this.value = undefined;
@@ -951,11 +688,11 @@ function ScanWithSeedStream(name, f, seed) {
 
 
 
-ScanWithSeedStream.prototype.handle = function scanWithSeedHandle(msg, source, topic) {
+ScanWithSeedStream.prototype.handle = function scanWithSeedHandle(msg, source) {
 
     const f = this.f;
-    this.value = f(this.value, msg, source, topic);
-    this.next.handle(this.value, source, topic);
+    this.value = f(this.value, msg, source);
+    this.next.handle(this.value, source);
 
 };
 
@@ -986,52 +723,51 @@ function SplitStream(name) {
 }
 
 
-SplitStream.prototype.handle = function splitHandle(msg, source, topic) {
+SplitStream.prototype.handle = function splitHandle(msg, source) {
 
     if(Array.isArray(msg)){
-        this.withArray(msg, source, topic);
+        this.withArray(msg, source);
     } else {
-        this.withIteration(msg, source, topic);
+        this.withIteration(msg, source);
     }
 
 };
 
 
-SplitStream.prototype.withArray = function(msg, source, topic){
+SplitStream.prototype.withArray = function(msg, source){
 
     const len = msg.length;
 
     for(let i = 0; i < len; ++i){
-        this.next.handle(msg[i], source, topic);
+        this.next.handle(msg[i], source);
     }
 
 };
 
 
 
-SplitStream.prototype.withIteration = function(msg, source, topic){
+SplitStream.prototype.withIteration = function(msg, source){
 
     const next = this.next;
 
     for(const m of msg){
-        next.handle(m, source, topic);
+        next.handle(m, source);
     }
 
 };
 
 NOOP_STREAM.addStubs(SplitStream);
 
-function WriteStream(name, data, topic) {
+function WriteStream(name, data) {
     this.name = name;
     this.data = data;
-    this.topic = topic;
     this.next = NOOP_STREAM;
 }
 
-WriteStream.prototype.handle = function handle(msg, source, topic) {
+WriteStream.prototype.handle = function handle(msg, source) {
 
-    this.data.write(msg, topic);
-    this.next.handle(msg, source, topic);
+    this.data.write(msg);
+    this.next.handle(msg, source);
 
 };
 
@@ -1050,12 +786,12 @@ function FilterMapStream(name, f, m, context) {
 
 }
 
-FilterMapStream.prototype.handle = function filterHandle(msg, source, topic) {
+FilterMapStream.prototype.handle = function filterHandle(msg, source) {
 
     const f = this.f;
     const m = this.m;
-    f.call(this.context, msg, source, topic) && this.next.handle(
-        m.call(this.context, msg, source, topic));
+    f.call(this.context, msg, source) && this.next.handle(
+        m.call(this.context, msg, source));
 
 };
 
@@ -1069,7 +805,7 @@ function PriorStream(name) {
 
 }
 
-PriorStream.prototype.handle = function handle(msg, source, topic) {
+PriorStream.prototype.handle = function handle(msg, source) {
 
     const arr = this.values;
 
@@ -1081,11 +817,11 @@ PriorStream.prototype.handle = function handle(msg, source, topic) {
     if(arr.length > 2)
         arr.shift();
 
-    this.next.handle(arr[0], source, topic);
+    this.next.handle(arr[0], source);
 
 };
 
-PriorStream.prototype.reset = function(msg, source, topic){
+PriorStream.prototype.reset = function(msg, source){
 
     this.msg = [];
     this.next.reset();
@@ -1116,10 +852,10 @@ ReduceStream.prototype.reset = function(){
 
 };
 
-ReduceStream.prototype.handle = function(msg, source, topic){
+ReduceStream.prototype.handle = function(msg, source){
 
     const f = this.f;
-    this.next.handle(this.v = f(msg, this.v), source, topic);
+    this.next.handle(this.v = f(msg, this.v), source);
 
 };
 
@@ -1134,7 +870,7 @@ function SkipNStream(name, count) {
 
 }
 
-SkipNStream.prototype.handle = function handle(msg, source, topic) {
+SkipNStream.prototype.handle = function handle(msg, source) {
 
     const c = this.count;
     const s = this.seen;
@@ -1142,12 +878,12 @@ SkipNStream.prototype.handle = function handle(msg, source, topic) {
     if(this.seen < c){
         this.seen = s + 1;
     } else {
-        this.next.handle(msg, source, topic);
+        this.next.handle(msg, source);
     }
 
 };
 
-SkipNStream.prototype.reset = function(msg, source, topic){
+SkipNStream.prototype.reset = function(){
 
     this.seen = 0;
 
@@ -1164,19 +900,19 @@ function TakeNStream(name, count) {
 
 }
 
-TakeNStream.prototype.handle = function handle(msg, source, topic) {
+TakeNStream.prototype.handle = function handle(msg, source) {
 
     const c = this.count;
     const s = this.seen;
 
     if(this.seen < c){
         this.seen = s + 1;
-        this.next.handle(msg, source, topic);
+        this.next.handle(msg, source);
     }
 
 };
 
-TakeNStream.prototype.reset = function(msg, source, topic){
+TakeNStream.prototype.reset = function(){
 
     this.seen = 0;
 
@@ -1194,40 +930,40 @@ function Spork(bus) {
 
 }
 
-Spork.prototype.handle = function(msg, topic, source) {
+Spork.prototype.handle = function(msg, source) {
 
     this.first.reset();
-    this._split(msg, source, topic);
-    this.last.handle(this.last.v, source, topic);
+    this._split(msg, source);
+    this.last.handle(this.last.v, source);
 
 };
 
 
-Spork.prototype.withArray = function withArray(msg, source, topic){
+Spork.prototype.withArray = function withArray(msg, source){
 
     const len = msg.length;
 
     for(let i = 0; i < len; ++i){
-        this.first.handle(msg[i], source, topic);
+        this.first.handle(msg[i], source);
     }
 
 };
 
-Spork.prototype.withIteration = function withIteration(msg, source, topic){
+Spork.prototype.withIteration = function withIteration(msg, source){
 
     const first = this.first;
     for(const i of msg){
-        first.handle(i, source, topic);
+        first.handle(i, source);
     }
 
 };
 
-Spork.prototype._split = function(msg, source, topic){
+Spork.prototype._split = function(msg, source){
 
     if(Array.isArray(msg)){
-        this.withArray(msg, source, topic);
+        this.withArray(msg, source);
     } else {
-        this.withIteration(msg, source, topic);
+        this.withIteration(msg, source);
     }
 
 };
@@ -1278,7 +1014,7 @@ Spork.prototype.filter = function filter(f) {
     return this;
 };
 
-Spork.prototype.filterMap = function filter(f, m) {
+Spork.prototype.filterMap = function filterMap(f, m) {
     this._extend(new FilterMapStream('', f, m));
     return this;
 };
@@ -1304,6 +1040,8 @@ const Nyan = {};
 
 const operationDefs = [
 
+    // config is a dash
+    // . is a prop
     {name: 'ACTION', sym: '^',  react: true, subscribe: true, need: true, solo: true},
     {name: 'WIRE',   sym: '~',  react: true, follow: true}, // INTERCEPT
     {name: 'WATCH',  sym: null, react: true, follow: true},
@@ -1313,7 +1051,6 @@ const operationDefs = [
     {name: 'READ',   sym: null, then: true, read: true},
     {name: 'ATTR',   sym: '#',  then: true, solo: true, output: true},
     {name: 'AND',    sym: '&',  then: true },
-    {name: 'STYLE',  sym: '$',  then: true,  solo: true, output: true },
     {name: 'WRITE',  sym: '=',  then: true,  solo: true },
     {name: 'SPRAY',  sym: '<',  then: true },
     {name: 'RUN',    sym: '*',  then: true, output: true },
@@ -1371,13 +1108,12 @@ for(let i = 0; i < operationDefs.length; i++){
 
 class NyanWord {
 
-    constructor(name, operation, maybe, need, topic, alias, monitor, extracts){
+    constructor(name, operation, maybe, need, alias, monitor, extracts){
 
         this.name = name;
         this.operation = operation;
         this.maybe = maybe || false;
         this.need = need || false;
-        this.topic = topic || null;
         this.alias = alias || null;
         this.monitor = monitor || false;
         this.extracts = extracts && extracts.length ? extracts : null; // possible list of message property pulls
@@ -1583,7 +1319,6 @@ function parsePhrase(str) {
 
         let maybe = false;
         let monitor = false;
-        let topic = null;
         let alias = null;
         let need = false;
 
@@ -1637,22 +1372,6 @@ function parsePhrase(str) {
                     need = true;
                     break;
 
-                case ':':
-
-                    if(chunks.length){
-                        const next = chunks[0];
-                        if(next === '('){
-                            monitor = true;
-                        } else {
-                            topic = next;
-                            chunks.shift(); // remove topic from queue
-                        }
-                    } else {
-                        monitor = true;
-                    }
-
-                    break;
-
                 case '(':
 
                     if(chunks.length){
@@ -1667,8 +1386,8 @@ function parsePhrase(str) {
 
         }
 
-        alias = alias || topic || name;
-        const nw = new NyanWord(name, operation, maybe, need, topic, alias, monitor, extracts);
+        alias = alias || name;
+        const nw = new NyanWord(name, operation, maybe, need, alias, monitor, extracts);
         words.push(nw);
 
     }
@@ -1738,9 +1457,8 @@ function getDoSpray(scope, phrase){
 
             const data = dataByAlias[alias];
             if(data) {
-                const word = wordByAlias[alias];
                 const msgPart = msg[alias];
-                data.silentWrite(msgPart, word.topic);
+                data.silentWrite(msgPart);
             }
 
         }
@@ -1749,8 +1467,7 @@ function getDoSpray(scope, phrase){
 
             const data = dataByAlias[alias];
             if(data) {
-                const word = wordByAlias[alias];
-                data.refresh(word.topic);
+                data.refresh();
             }
 
         }
@@ -1786,11 +1503,10 @@ function getDoAnd(scope, phrase) {
 function getDoReadSingle(scope, word) {
 
     const data = scope.find(word.name, !word.maybe);
-    const topic = word.topic;
 
     return function doReadSingle() {
 
-        return data.read(topic);
+        return data.read();
 
     };
 
@@ -1831,9 +1547,9 @@ function getDoReadMultiple(scope, phrase, isAndOperation){
                 } else {
 
                     const data = scope.find(word.name, !word.maybe);
-                    const prop = word.monitor ? (word.alias || word.topic) : (word.alias || word.name);
-                    if (data.present(word.topic))
-                        result[prop] = data.read(word.topic);
+                    const prop = word.alias || word.name;
+                    if (data.present)
+                        result[prop] = data.read();
 
                 }
 
@@ -1849,16 +1565,16 @@ function getDoReadMultiple(scope, phrase, isAndOperation){
 // get data stream -- store data in bus, emit into stream on pull()
 
 
-function addDataSource(bus, scope, word, canPull) {
+function addDataSource(bus, scope, word) {
 
     const data = scope.find(word.name, !word.maybe);
-    bus.addSubscribe(word.alias, data, word.topic);
+    bus.addSubscribe(word.alias, data);
 
 }
 
 function addEventSource(bus, word, target) {
 
-    bus.addEvent(word.alias, target, word.topic, word.useCapture);
+    bus.addEvent(word.alias, target, word.useCapture);
 
 }
 
@@ -2085,6 +1801,8 @@ function applyProcess(scope, bus, phrase, context, node, lookup) {
 
         bus.run(getDoSpray(scope, phrase)); // todo validate that writes do not contain words in reacts
 
+    } else if (operation === 'ATTR') {
+        // #attr:thing, #style:moo, #prop:innerText, #class
     }
 
 }
@@ -2093,7 +1811,7 @@ function applyProcess(scope, bus, phrase, context, node, lookup) {
 function applyWriteProcess(bus, scope, word){
 
     const data = scope.find(word.name, !word.maybe);
-    bus.write(data, word.topic);
+    bus.write(data);
 
 }
 
@@ -2290,9 +2008,9 @@ const splitStreamBuilder = function() {
     }
 };
 
-const writeStreamBuilder = function(data, topic) {
+const writeStreamBuilder = function(data) {
     return function(name) {
-        return new WriteStream(name, data, topic);
+        return new WriteStream(name, data);
     }
 };
 
@@ -2305,7 +2023,7 @@ const filterMapStreamBuilder = function(f, m, context) {
 function getHasKeys(keys){
 
     const len = keys.length;
-    return function _hasKeys(msg, source, topic){
+    return function _hasKeys(msg, source){
 
         if(typeof msg !== 'object')
             return false;
@@ -2340,7 +2058,7 @@ class Bus {
         this._locked = false; // prevents additional sources from being added
 
         if(scope)
-            scope._busList.push(this);
+            scope._buses.push(this);
 
         const f = new Frame(this);
         this._frames.push(f);
@@ -2747,9 +2465,9 @@ class Bus {
 
     };
 
-    write(data, topic) {
+    write(data) {
 
-        this._createNormalFrame(writeStreamBuilder(data, topic));
+        this._createNormalFrame(writeStreamBuilder(data));
         return this;
 
     };
@@ -2783,7 +2501,6 @@ class Bus {
 
     };
 
-
     skipDupes() {
 
         this._createNormalFrame(skipStreamBuilder());
@@ -2791,9 +2508,9 @@ class Bus {
 
     };
 
-    addSubscribe(name, data, topic){
+    addSubscribe(name, data){
 
-        const source = new SubscribeSource(name, data, topic, true);
+        const source = new SubscribeSource(name, data, true);
         this.addSource(source);
 
         return this;
@@ -2838,16 +2555,11 @@ let idCounter = 0;
 
 function _destroyEach(arr){
 
-    const len = arr.length;
-    for(let i = 0; i < len; i++){
-        const item = arr[i];
-        item.destroy();
+    let i = arr.length;
+    while(i--){
+        arr[i].destroy();
     }
 
-}
-
-function isPrivate(name){
-    return name[0] === '_';
 }
 
 class Scope{
@@ -2858,10 +2570,10 @@ class Scope{
         this._name = name;
         this._parent = null;
         this._children = [];
-        this._busList = [];
-        this._dataList = new Map();
-        this._valves = new Map();
-        this._mirrors = new Map();
+        this._buses = [];
+        this._dataMap = new Map();
+        this._valveMap = new Map();
+        this._mirrorMap = new Map();
         this._dead = false;
 
     };
@@ -2891,15 +2603,15 @@ class Scope{
         if(this._dead)
             return;
 
-        _destroyEach(this.children); // iterates over copy to avoid losing position as children leaves their parent
-        _destroyEach(this._busList);
-        _destroyEach(this._dataList.values());
+        _destroyEach(this.children);
+        _destroyEach(this._buses);
+        _destroyEach(this._dataMap.values());
 
         this._children = [];
-        this._busList = [];
-        this._dataList.clear();
-        this._valves.clear();
-        this._mirrors.clear();
+        this._buses = [];
+        this._dataMap.clear();
+        this._valveMap.clear();
+        this._mirrorMap.clear();
 
     };
 
@@ -2954,61 +2666,36 @@ class Scope{
     set valves(list){
 
         for(const name of list){
-            this._valves.set(name, true);
+            this._valveMap.set(name, true);
         }
 
     }
 
-    get valves(){ return Array.from(this._valves.keys());};
+    get valves(){ return Array.from(this._valveMap.keys());};
 
 
     _createMirror(data){
 
         const mirror = Object.create(data);
-        mirror._type = DATA_TYPES.MIRROR;
-        this._mirrors.set(data.name, mirror);
+        mirror._writable = false;
+        this._mirrorMap.set(data.name, mirror);
         return mirror;
 
     };
 
-    _createData(name, type){
+    _createData(name){
 
-        const d = new Data(this, name, type);
-        this._dataList.set(name, d);
+        const d = new Data(this, name);
+        this._dataMap.set(name, d);
+        if(!d._action && !d._private) // if a public state, create a read-only mirror
+            this._createMirror(d);
         return d;
 
     };
 
+    demand(name){
 
-    data(name){
-
-        return this.grab(name) || this._createData(name, DATA_TYPES.NONE);
-
-    };
-
-
-    action(name){
-
-        const d = this.grab(name);
-
-        if(d)
-            return d.verify(DATA_TYPES.ACTION);
-
-        return this._createData(name, DATA_TYPES.ACTION);
-
-    };
-
-
-    state(name){
-
-        const d = this.grab(name);
-
-        if(d)
-            return d.verify(DATA_TYPES.STATE);
-
-        const state = this._createData(name, DATA_TYPES.STATE);
-        this._createMirror(state);
-        return state;
+        return this.grab(name) || this._createData(name);
 
     };
 
@@ -3051,15 +2738,15 @@ class Scope{
         const result = new Map();
         const appliedValves = new Map();
 
-        for(const [key, value] of scope._dataList){
+        for(const [key, value] of scope._dataMap){
             result.set(key, value);
         }
 
         while(scope = scope._parent){
 
-            const dataList = scope._dataList;
-            const valves = scope._valves;
-            const mirrors = scope._mirrors;
+            const dataList = scope._dataMap;
+            const valves = scope._valveMap;
+            const mirrors = scope._mirrorMap;
 
             if(!dataList.size)
                 continue;
@@ -3104,43 +2791,42 @@ class Scope{
         if(localData)
             return localData;
 
-        if(isPrivate(name))
-            return null;
-
         let scope = this;
 
         while(scope = scope._parent){
 
-            const valves = scope._valves;
+            const valves = scope._valveMap;
 
             // if valves exist and the name is not present, stop looking
             if(valves.size && !valves.has(name)){
                 break;
             }
 
-            const mirror = scope._mirrors.get(name);
+            const mirror = scope._mirrorMap.get(name);
 
             if(mirror)
                 return mirror;
 
             const d = scope.grab(name);
 
-            if(d)
+            if(d) {
+                if (d._private)
+                    continue;
                 return d;
+            }
 
         }
 
-        if(required)
-            throw new Error('Required data: ' + name + ' not found!');
+        _ASSERT_NOT_REQUIRED(required);
 
         return null;
 
     };
 
+
     findOuter(name, required){
 
-        if(isPrivate(name))
-            return null;
+        _ASSERT_NO_OUTER_PRIVATE(name);
 
         let foundInner = false;
         const localData = this.grab(name);
@@ -3152,14 +2838,14 @@ class Scope{
 
         while(scope = scope._parent){
 
-            const valves = scope._valves;
+            const valves = scope._valveMap;
 
             // if valves exist and the name is not present, stop looking
             if(valves.size && !valves.has(name)){
                 break;
             }
 
-            const mirror = scope._mirrors.get(name);
+            const mirror = scope._mirrorMap.get(name);
 
             if(mirror) {
 
@@ -3191,7 +2877,7 @@ class Scope{
 
     grab(name, required) {
 
-        const data = this._dataList.get(name);
+        const data = this._dataMap.get(name);
 
         if(!data && required)
             throw new Error('Required Data: ' + name + ' not found!');
@@ -3200,47 +2886,16 @@ class Scope{
 
     };
 
-    transaction(writes){
-
-        if(Array.isArray(writes))
-            return this._multiWriteArray(writes);
-        else if(typeof writes === 'object')
-            return this._multiWriteHash(writes);
-
-        throw new Error('Write values must be in an array of object hash.');
-
-    };
-
-    // write {name, topic, value} objects as a transaction
-    _multiWriteArray(writeArray){
-
-        const list = [];
-
-        for(const w of writeArray){
-            const d = this.find(w.name);
-            d.silentWrite(w.value, w.topic);
-            list.push(d);
-        }
-
-        let i = 0;
-        for(const d of list){
-            const w = writeArray[i];
-            d.refresh(w.topic);
-        }
-
-        return this;
-
-    };
-
 
     // write key-values as a transaction
-    _multiWriteHash(writeHash){
+    write(writeHash){
 
         const list = [];
 
         for(const k in writeHash){
             const v = writeHash[k];
-            const d = this.find(k);
+            const d = this.grab(k);
+            // todo ASSERT_DATA_FOUND
             d.silentWrite(v);
             list.push(d);
         }
@@ -3253,6 +2908,16 @@ class Scope{
 
     };
 
+}
+
+function _ASSERT_NOT_REQUIRED(required){
+    if(required)
+        throw new Error('Required data: ' + name + ' not found!');
+}
+
+function _ASSERT_NO_OUTER_PRIVATE(name){
+    if(isPrivate(name))
+        throw new Error('Private data: ' + name + ' cannot be accessed via an outer scope!');
 }
 
 const FUNCTOR$5 = function(d) {
@@ -3397,10 +3062,10 @@ Catbus.fromValue = function(value, name){
 };
 
 
-Catbus.fromSubscribe = function(name, data, topic){
+Catbus.fromSubscribe = function(name, data){
 
     const bus = new Bus();
-    const source = new SubscribeSource(name, data, topic, true);
+    const source = new SubscribeSource(name, data, true);
     bus.addSource(source);
 
     return bus;
@@ -4240,7 +3905,7 @@ function Cog(url, el, before, parent, config, index, key){
     this.root = '';
     this.script = null;
     this.config = config || {};
-    this.source = this.scope.state('source');
+    this.source = this.scope.demand('source');
     this.index = index;
     this.key = key;
     this.scriptMonitor = null;
@@ -4425,14 +4090,11 @@ Cog.prototype.loadTraits = function loadTraits(){
 Cog.prototype.buildStates = function buildStates(){
 
     const states = this.script.states;
-    const len = states.length;
 
-    for(let i = 0; i < len; ++i){
+    for(const name in states){
 
-        const def = states[i];
-        const state = def.open ?
-            this.scope.data(def.name) :
-            this.scope.state(def.name);
+        const def = states[name];
+        const state = this.scope.demand(name);
 
         if(def.hasValue) {
 
@@ -4440,20 +4102,53 @@ Cog.prototype.buildStates = function buildStates(){
                 ? def.value.call(this.script)
                 : def.value;
 
-            state.write(value, def.topic, true);
+            state.write(value, true);
         }
 
     }
 
-    for(let i = 0; i < len; ++i){
+    for(const name in states){
 
-        const def = states[i];
-        const state = this.scope.grab(def.name);
-        state.refresh(def.topic);
+        const state = this.scope.grab(name);
+        state.refresh();
 
     }
 
 };
+
+Cog.prototype.buildBelts = function buildBelts(){
+
+    const belts = this.script.belts;
+
+    for(const name in belts){
+
+        const def = belts[name];
+        const state = this.scope.demand(name);
+        const action = this.scope.demand('$' + name);
+
+
+        if(def.hasValue) {
+
+            const value = typeof def.value === 'function'
+                ? def.value.call(this.script)
+                : def.value;
+
+            state.write(value, true);
+
+        }
+
+
+    }
+
+    for(const name in belts){
+
+        const state = this.scope.grab(name);
+        state.refresh();
+
+    }
+
+};
+
 
 Cog.prototype.buildRelays = function buildRelays(){
 
@@ -4478,8 +4173,8 @@ Cog.prototype.buildRelays = function buildRelays(){
 
         let report = reportName ? scope.find(config[reportName], true) : null;
 
-        let localAction = actionName ? scope.action(actionName) : null;
-        let localState = stateName ? scope.state(stateName) : null;
+        let localAction = actionName ? scope.demand(actionName) : null;
+        let localState = stateName ? scope.demand(stateName) : null;
 
         if(actionName && !stateName && remoteAction){ // only action goes out relay
                 scope.bus().addSubscribe(actionName, localAction).write(remoteAction);
@@ -4506,7 +4201,7 @@ Cog.prototype.buildRelays = function buildRelays(){
         }
 
         // todo wire with transform
-        // todo add report
+        // todo add report -- remove write to remote state
 
     }
 
@@ -4524,10 +4219,10 @@ Cog.prototype.buildActions = function buildActions(){
         this.scope.action(def.name);
         // also {bus, accept}
 
-
     }
 
 };
+
 
 Cog.prototype.buildEvents = function buildEvents(){
 
@@ -4553,30 +4248,44 @@ Cog.prototype.buildEvents = function buildEvents(){
 
 };
 
+
 Cog.prototype.buildBusFromNyan = function buildBusFromNyan(nyanStr, el){
-    return this.scope.bus(nyanStr, this.script, el, this.script.methods);
+    return this.scope.bus(nyanStr, this.script, el);
 };
+
 
 Cog.prototype.buildBusFromFunction = function buildBusFromFunction(f, el){
 
     //const bus = this.scope.bus()
 };
 
+
 Cog.prototype.buildBuses = function buildBuses(){
 
     const buses = this.script.buses;
+    const belts = this.script.belts;
+
     const len = buses.length;
     const instances = this.busInstances;
+
+    for(const name in belts){
+        const bus = this.buildBusFromNyan('$' + name + ' | ' + name);
+        bus.pull();
+        instances.push(bus);
+    }
 
     for(let i = 0; i < len; ++i){
 
         const def = buses[i];
         const bus = this.buildBusFromNyan(def); // todo add function support not just nyan str
+        bus.pull();
         instances.push(bus);
 
     }
 
+
 };
+
 
 Cog.prototype.buildCogs = function buildCogs(){
 
@@ -4648,18 +4357,6 @@ Cog.prototype.buildTraits = function buildTraits(){
 
 };
 
-Cog.prototype.buildMethods = function buildMethods(){
-
-    const methods = this.script.methods;
-    const script = this.script;
-    script.methods = {};
-
-    for(const name in methods){
-        const f = methods[name];
-        script.methods[name] = typeof f === 'function' ? f.bind(script) : function(){ return f;};
-    }
-
-};
 
 Cog.prototype.initTraits = function initTraits(){
 
@@ -4697,9 +4394,10 @@ Cog.prototype.startTraits = function startTraits(){
 Cog.prototype.build = function build(){ // urls loaded
 
     // script.prep is called earlier
-    this.buildMethods();
+
     this.buildTraits(); // calls prep on all traits -- mixes states, actions, etc
     this.buildStates();
+    this.buildBelts();
     this.buildActions();
     this.buildRelays();
 
@@ -4812,28 +4510,28 @@ function createWhiteList(v){
     return TRUE;
 }
 
-function prepStateDefs(states){
+function prepDataDefs(data){
 
-    const len = states.length;
-    const list = [];
+    if(!data)
+        return data;
 
-    for(let i = 0; i < len; ++i){
+    for(const name in data){
 
-        const def = states[i];
-        const specificName = def.specificName = def.name;
+
+        const val = data[name];
+        const def = typeof val === 'object' ? val : {value: val};
+
         def.hasValue = def.hasOwnProperty('value');
         def.hasAccept = def.hasOwnProperty('accept');
         def.value = def.hasValue && def.value;
         def.accept = def.hasAccept ? createWhiteList(def.hasAccept) : NOOP;
-        const hasColon = specificName.indexOf(':') === -1;
-        def.topic = hasColon ? null : specificName.substr(i+1);
-        def.name = hasColon ? specificName : specificName.substring(0, i);
+        def.name = name;
 
-        list.push(def);
+        data[name] = def;
 
     }
 
-    return list;
+    return data;
 
 }
 
@@ -4860,7 +4558,9 @@ Muta.cog = function cog(def){
         def[name] = def[name] || NOOP;
     }
 
-    def.states = prepStateDefs(def.states);
+    def.states = prepDataDefs(def.states);
+    def.belts  = prepDataDefs(def.belts);
+    def.actions  = prepDataDefs(def.actions);
 
     ScriptLoader.currentScript = def;
 

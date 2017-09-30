@@ -30,7 +30,7 @@ function Cog(url, el, before, parent, config, index, key){
     this.root = '';
     this.script = null;
     this.config = config || {};
-    this.source = this.scope.state('source');
+    this.source = this.scope.demand('source');
     this.index = index;
     this.key = key;
     this.scriptMonitor = null;
@@ -215,14 +215,11 @@ Cog.prototype.loadTraits = function loadTraits(){
 Cog.prototype.buildStates = function buildStates(){
 
     const states = this.script.states;
-    const len = states.length;
 
-    for(let i = 0; i < len; ++i){
+    for(const name in states){
 
-        const def = states[i];
-        const state = def.open ?
-            this.scope.data(def.name) :
-            this.scope.state(def.name);
+        const def = states[name];
+        const state = this.scope.demand(name);
 
         if(def.hasValue) {
 
@@ -230,20 +227,53 @@ Cog.prototype.buildStates = function buildStates(){
                 ? def.value.call(this.script)
                 : def.value;
 
-            state.write(value, def.topic, true);
+            state.write(value, true);
         }
 
     }
 
-    for(let i = 0; i < len; ++i){
+    for(const name in states){
 
-        const def = states[i];
-        const state = this.scope.grab(def.name);
-        state.refresh(def.topic);
+        const state = this.scope.grab(name);
+        state.refresh();
 
     }
 
 };
+
+Cog.prototype.buildBelts = function buildBelts(){
+
+    const belts = this.script.belts;
+
+    for(const name in belts){
+
+        const def = belts[name];
+        const state = this.scope.demand(name);
+        const action = this.scope.demand('$' + name);
+
+
+        if(def.hasValue) {
+
+            const value = typeof def.value === 'function'
+                ? def.value.call(this.script)
+                : def.value;
+
+            state.write(value, true);
+
+        }
+
+
+    }
+
+    for(const name in belts){
+
+        const state = this.scope.grab(name);
+        state.refresh();
+
+    }
+
+};
+
 
 Cog.prototype.buildRelays = function buildRelays(){
 
@@ -268,8 +298,8 @@ Cog.prototype.buildRelays = function buildRelays(){
 
         let report = reportName ? scope.find(config[reportName], true) : null;
 
-        let localAction = actionName ? scope.action(actionName) : null;
-        let localState = stateName ? scope.state(stateName) : null;
+        let localAction = actionName ? scope.demand(actionName) : null;
+        let localState = stateName ? scope.demand(stateName) : null;
 
         if(actionName && !stateName && remoteAction){ // only action goes out relay
                 scope.bus().addSubscribe(actionName, localAction).write(remoteAction);
@@ -296,7 +326,7 @@ Cog.prototype.buildRelays = function buildRelays(){
         }
 
         // todo wire with transform
-        // todo add report
+        // todo add report -- remove write to remote state
 
     }
 
@@ -314,10 +344,10 @@ Cog.prototype.buildActions = function buildActions(){
         this.scope.action(def.name);
         // also {bus, accept}
 
-
     }
 
 };
+
 
 Cog.prototype.buildEvents = function buildEvents(){
 
@@ -343,30 +373,44 @@ Cog.prototype.buildEvents = function buildEvents(){
 
 };
 
+
 Cog.prototype.buildBusFromNyan = function buildBusFromNyan(nyanStr, el){
-    return this.scope.bus(nyanStr, this.script, el, this.script.methods);
+    return this.scope.bus(nyanStr, this.script, el);
 };
+
 
 Cog.prototype.buildBusFromFunction = function buildBusFromFunction(f, el){
 
     //const bus = this.scope.bus()
 };
 
+
 Cog.prototype.buildBuses = function buildBuses(){
 
     const buses = this.script.buses;
+    const belts = this.script.belts;
+
     const len = buses.length;
     const instances = this.busInstances;
+
+    for(const name in belts){
+        const bus = this.buildBusFromNyan('$' + name + ' | ' + name);
+        bus.pull();
+        instances.push(bus);
+    }
 
     for(let i = 0; i < len; ++i){
 
         const def = buses[i];
         const bus = this.buildBusFromNyan(def); // todo add function support not just nyan str
+        bus.pull();
         instances.push(bus);
 
     }
 
+
 };
+
 
 Cog.prototype.buildCogs = function buildCogs(){
 
@@ -438,18 +482,6 @@ Cog.prototype.buildTraits = function buildTraits(){
 
 };
 
-Cog.prototype.buildMethods = function buildMethods(){
-
-    const methods = this.script.methods;
-    const script = this.script;
-    script.methods = {};
-
-    for(const name in methods){
-        const f = methods[name];
-        script.methods[name] = typeof f === 'function' ? f.bind(script) : function(){ return f;};
-    }
-
-};
 
 Cog.prototype.initTraits = function initTraits(){
 
@@ -487,9 +519,10 @@ Cog.prototype.startTraits = function startTraits(){
 Cog.prototype.build = function build(){ // urls loaded
 
     // script.prep is called earlier
-    this.buildMethods();
+
     this.buildTraits(); // calls prep on all traits -- mixes states, actions, etc
     this.buildStates();
+    this.buildBelts();
     this.buildActions();
     this.buildRelays();
 

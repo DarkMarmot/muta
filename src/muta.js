@@ -34,28 +34,28 @@ function createWhiteList(v){
     return TRUE;
 }
 
-function prepStateDefs(states){
+function prepDataDefs(data){
 
-    const len = states.length;
-    const list = [];
+    if(!data)
+        return data;
 
-    for(let i = 0; i < len; ++i){
+    for(const name in data){
 
-        const def = states[i];
-        const specificName = def.specificName = def.name;
+
+        const val = data[name];
+        const def = typeof val === 'object' ? val : {value: val};
+
         def.hasValue = def.hasOwnProperty('value');
         def.hasAccept = def.hasOwnProperty('accept');
         def.value = def.hasValue && def.value;
         def.accept = def.hasAccept ? createWhiteList(def.hasAccept) : NOOP;
-        const hasColon = specificName.indexOf(':') === -1;
-        def.topic = hasColon ? null : specificName.substr(i+1);
-        def.name = hasColon ? specificName : specificName.substring(0, i);
+        def.name = name;
 
-        list.push(def);
+        data[name] = def;
 
     }
 
-    return list;
+    return data;
 
 }
 
@@ -82,7 +82,9 @@ Muta.cog = function cog(def){
         def[name] = def[name] || NOOP;
     }
 
-    def.states = prepStateDefs(def.states);
+    def.states = prepDataDefs(def.states);
+    def.belts  = prepDataDefs(def.belts);
+    def.actions  = prepDataDefs(def.actions);
 
     ScriptLoader.currentScript = def;
 

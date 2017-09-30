@@ -49,17 +49,17 @@ Muta.cog({
     belts: { // todo create both state and $action
         hop: 'cow.js',
         stuff: {value: [1,2,3,4]}
-    },
+    }
 
-    actions: {
-        $hop: {},
-        $stuff: {}
-    },
+    // actions: {
+    //     $hop: {},
+    //     $stuff: {}
+    // },
 
-    buses: [
-        '$stuff | =stuff',
-        '$hop | =hop'
-    ]
+    // buses: [
+    //     '$stuff | =stuff',
+    //     '$hop | =hop'
+    // ]
 
     // actions: {
     //     catfish: 'fluff.js',

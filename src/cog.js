@@ -394,7 +394,7 @@ Cog.prototype.buildBuses = function buildBuses(){
     const instances = this.busInstances;
 
     for(const name in belts){
-        const bus = this.buildBusFromNyan('$' + name + ' | ' + name);
+        const bus = this.buildBusFromNyan('$' + name + ' | =' + name);
         bus.pull();
         instances.push(bus);
     }

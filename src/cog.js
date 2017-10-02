@@ -248,9 +248,7 @@ Cog.prototype.buildBelts = function buildBelts(){
     for(const name in belts){
 
         const def = belts[name];
-        const state = this.scope.demand(name);
-        const action = this.scope.demand('$' + name);
-
+        const state = this.scope.belt(name);
 
         if(def.hasValue) {
 
@@ -261,7 +259,6 @@ Cog.prototype.buildBelts = function buildBelts(){
             state.write(value, true);
 
         }
-
 
     }
 
@@ -286,24 +283,29 @@ Cog.prototype.buildRelays = function buildRelays(){
 
         const def = relays[i];
 
-        const actionName = def.action;
-        const stateName = def.state;
-        const reportName = def.report;
+        const actionProp = def.wire || def.action;
+        const stateProp = def.wire || def.state;
 
-        const remoteActionName = actionName && config[actionName];
-        const remoteStateName = stateName && config[stateName];
+        let actionName = null;
+        let stateName = null;
+
+        if(actionProp)
+            actionName = (actionProp[0] !== '$') ? '$' + actionProp : actionProp;
+
+        if(stateProp)
+            stateName = (stateProp[0] === '$') ? stateProp.substr(1) : stateProp;
+
+        const remoteActionName = actionProp && config[actionProp];
+        const remoteStateName = stateProp && config[stateProp];
 
         let remoteAction = remoteActionName ? scope.find(remoteActionName, true) : null;
         let remoteState = remoteStateName ? scope.find(remoteStateName, true) : null;
-
-        let report = reportName ? scope.find(config[reportName], true) : null;
 
         let localAction = actionName ? scope.demand(actionName) : null;
         let localState = stateName ? scope.demand(stateName) : null;
 
         if(actionName && !stateName && remoteAction){ // only action goes out relay
                 scope.bus().addSubscribe(actionName, localAction).write(remoteAction);
-
         }
 
         if(stateName && !actionName && remoteState){ // only state comes in relay
@@ -314,19 +316,16 @@ Cog.prototype.buildRelays = function buildRelays(){
             if(remoteAction && remoteState){ // wire action and state (wire together above)
                 scope.bus().addSubscribe(actionName, localAction).write(remoteAction);
                 scope.bus().addSubscribe(remoteStateName, remoteState).write(localState).pull();
-            } else if (remoteAction && !remoteState){ // action to remote action to state
-                scope.bus().addSubscribe(actionName, localAction).write(remoteAction);
-                scope.bus().addSubscribe(remoteActionName, remoteAction).write(localState);
-            } else if (remoteState && !remoteAction){ // action to remote state to state
-                scope.bus().addSubscribe(actionName, localAction).write(remoteState);
-                scope.bus().addSubscribe(remoteStateName, remoteState).write(localState).pull();
+            } else if (remoteAction && !remoteState){
+                // assert relay has action sans state
+            } else if (remoteState && !remoteAction){
+                // assert relay has state sans action
             } else { // neither configured, wire locally
+                // warning -- relay disconnected
                 scope.bus().addSubscribe(actionName, localAction).write(localState);
             }
         }
 
-        // todo wire with transform
-        // todo add report -- remove write to remote state
 
     }
 
@@ -351,6 +350,8 @@ Cog.prototype.buildActions = function buildActions(){
 
 Cog.prototype.buildEvents = function buildEvents(){
 
+    // todo add compile check -- 'target el' not found in display err!
+
     const events = this.script.events;
     const buses = this.busInstances;
 
@@ -358,6 +359,8 @@ Cog.prototype.buildEvents = function buildEvents(){
 
         const value = events[name];
         const el = this.script.els[name];
+
+        _ASSERT_HTML_ELEMENT_EXISTS(name, el);
 
         if(Array.isArray(value)){
             for(let i = 0; i < value.length; ++i){
@@ -394,9 +397,8 @@ Cog.prototype.buildBuses = function buildBuses(){
     const instances = this.busInstances;
 
     for(const name in belts){
-        const bus = this.buildBusFromNyan('$' + name + ' | =' + name);
+        const bus = this.scope._belts[name];
         bus.pull();
-        instances.push(bus);
     }
 
     for(let i = 0; i < len; ++i){
@@ -407,7 +409,6 @@ Cog.prototype.buildBuses = function buildBuses(){
         instances.push(bus);
 
     }
-
 
 };
 
@@ -474,7 +475,7 @@ Cog.prototype.buildTraits = function buildTraits(){
 
     const len = traits.length;
     for(let i = 0; i < len; ++i){
-        const def = traits[i]; // todo path and root instead of url/root?
+        const def = traits[i]; // todo url and base instead of url/root?
         const instance = new Trait(this, def);
         instances.push(instance);
         instance.script.prep();
@@ -604,5 +605,12 @@ Cog.prototype.destroy = function(){
     this.children = [];
 
 };
+
+
+function _ASSERT_HTML_ELEMENT_EXISTS(name, el){
+    if(!el){
+        throw new Error('HTML Element + named [' + name + '] not found in display!' )
+    }
+}
 
 export default Cog;

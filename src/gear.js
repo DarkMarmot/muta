@@ -28,6 +28,8 @@ function Gear(url, el, before, parent, config){
 
     this.usePlaceholder();
 
+    // todo add err url must be data pt! not real url (no dots in dp)
+
     const nyan = url + ' | *createCog';
     this.bus = this.scope.bus(nyan, this).pull();
 

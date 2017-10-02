@@ -16,7 +16,7 @@ class Data {
 
     // should only be created via Scope methods
 
-    constructor(scope, name, type) {
+    constructor(scope, name) {
 
         this._scope       = scope;
         this._action      = isAction(name);
@@ -132,7 +132,6 @@ function NoopSource() {
 NoopSource.prototype.init = function init() {};
 NoopSource.prototype.pull = function pull() {};
 NoopSource.prototype.destroy = function destroy() {};
-
 
 const stubs = {init:'init', pull:'pull', destroy:'destroy'};
 
@@ -2570,6 +2569,7 @@ class Scope{
         this._name = name;
         this._parent = null;
         this._children = [];
+        this._belts = {};
         this._buses = [];
         this._dataMap = new Map();
         this._valveMap = new Map();
@@ -2696,6 +2696,21 @@ class Scope{
     demand(name){
 
         return this.grab(name) || this._createData(name);
+
+    };
+
+
+    belt(stateName){
+
+        const actionName = '$' + stateName;
+        const state = this.demand(stateName);
+        const action = this.demand(actionName);
+
+        if(!this._belts[stateName]) {
+            this._belts[stateName] = this.bus(actionName + '|=' + stateName);
+        }
+
+        return state;
 
     };
 
@@ -3488,6 +3503,8 @@ function Gear(url, el, before, parent, config){
 
     this.usePlaceholder();
 
+    // todo add err url must be data pt! not real url (no dots in dp)
+
     const nyan = url + ' | *createCog';
     this.bus = this.scope.bus(nyan, this).pull();
 
@@ -4123,9 +4140,7 @@ Cog.prototype.buildBelts = function buildBelts(){
     for(const name in belts){
 
         const def = belts[name];
-        const state = this.scope.demand(name);
-        const action = this.scope.demand('$' + name);
-
+        const state = this.scope.belt(name);
 
         if(def.hasValue) {
 
@@ -4136,7 +4151,6 @@ Cog.prototype.buildBelts = function buildBelts(){
             state.write(value, true);
 
         }
-
 
     }
 
@@ -4161,24 +4175,29 @@ Cog.prototype.buildRelays = function buildRelays(){
 
         const def = relays[i];
 
-        const actionName = def.action;
-        const stateName = def.state;
-        const reportName = def.report;
+        const actionProp = def.wire || def.action;
+        const stateProp = def.wire || def.state;
 
-        const remoteActionName = actionName && config[actionName];
-        const remoteStateName = stateName && config[stateName];
+        let actionName = null;
+        let stateName = null;
+
+        if(actionProp)
+            actionName = (actionProp[0] !== '$') ? '$' + actionProp : actionProp;
+
+        if(stateProp)
+            stateName = (stateProp[0] === '$') ? stateProp.substr(1) : stateProp;
+
+        const remoteActionName = actionProp && config[actionProp];
+        const remoteStateName = stateProp && config[stateProp];
 
         let remoteAction = remoteActionName ? scope.find(remoteActionName, true) : null;
         let remoteState = remoteStateName ? scope.find(remoteStateName, true) : null;
-
-        let report = reportName ? scope.find(config[reportName], true) : null;
 
         let localAction = actionName ? scope.demand(actionName) : null;
         let localState = stateName ? scope.demand(stateName) : null;
 
         if(actionName && !stateName && remoteAction){ // only action goes out relay
                 scope.bus().addSubscribe(actionName, localAction).write(remoteAction);
-
         }
 
         if(stateName && !actionName && remoteState){ // only state comes in relay
@@ -4189,19 +4208,16 @@ Cog.prototype.buildRelays = function buildRelays(){
             if(remoteAction && remoteState){ // wire action and state (wire together above)
                 scope.bus().addSubscribe(actionName, localAction).write(remoteAction);
                 scope.bus().addSubscribe(remoteStateName, remoteState).write(localState).pull();
-            } else if (remoteAction && !remoteState){ // action to remote action to state
-                scope.bus().addSubscribe(actionName, localAction).write(remoteAction);
-                scope.bus().addSubscribe(remoteActionName, remoteAction).write(localState);
-            } else if (remoteState && !remoteAction){ // action to remote state to state
-                scope.bus().addSubscribe(actionName, localAction).write(remoteState);
-                scope.bus().addSubscribe(remoteStateName, remoteState).write(localState).pull();
+            } else if (remoteAction && !remoteState){
+                // assert relay has action sans state
+            } else if (remoteState && !remoteAction){
+                // assert relay has state sans action
             } else { // neither configured, wire locally
+                // warning -- relay disconnected
                 scope.bus().addSubscribe(actionName, localAction).write(localState);
             }
         }
 
-        // todo wire with transform
-        // todo add report -- remove write to remote state
 
     }
 
@@ -4226,6 +4242,8 @@ Cog.prototype.buildActions = function buildActions(){
 
 Cog.prototype.buildEvents = function buildEvents(){
 
+    // todo add compile check -- 'target el' not found in display err!
+
     const events = this.script.events;
     const buses = this.busInstances;
 
@@ -4233,6 +4251,8 @@ Cog.prototype.buildEvents = function buildEvents(){
 
         const value = events[name];
         const el = this.script.els[name];
+
+        _ASSERT_HTML_ELEMENT_EXISTS(name, el);
 
         if(Array.isArray(value)){
             for(let i = 0; i < value.length; ++i){
@@ -4269,9 +4289,8 @@ Cog.prototype.buildBuses = function buildBuses(){
     const instances = this.busInstances;
 
     for(const name in belts){
-        const bus = this.buildBusFromNyan('$' + name + ' | =' + name);
+        const bus = this.scope._belts[name];
         bus.pull();
-        instances.push(bus);
     }
 
     for(let i = 0; i < len; ++i){
@@ -4282,7 +4301,6 @@ Cog.prototype.buildBuses = function buildBuses(){
         instances.push(bus);
 
     }
-
 
 };
 
@@ -4349,7 +4367,7 @@ Cog.prototype.buildTraits = function buildTraits(){
 
     const len = traits.length;
     for(let i = 0; i < len; ++i){
-        const def = traits[i]; // todo path and root instead of url/root?
+        const def = traits[i]; // todo url and base instead of url/root?
         const instance = new Trait(this, def);
         instances.push(instance);
         instance.script.prep();
@@ -4480,6 +4498,13 @@ Cog.prototype.destroy = function(){
 
 };
 
+
+function _ASSERT_HTML_ELEMENT_EXISTS(name, el){
+    if(!el){
+        throw new Error('HTML Element + named [' + name + '] not found in display!' )
+    }
+}
+
 const Muta = {};
 const NOOP = function(){};
 const TRUE = function(){ return true;};
@@ -4510,7 +4535,7 @@ function createWhiteList(v){
     return TRUE;
 }
 
-function prepDataDefs(data){
+function prepDataDefs(data, asActions){
 
     if(!data)
         return data;
@@ -4525,7 +4550,7 @@ function prepDataDefs(data){
         def.hasAccept = def.hasOwnProperty('accept');
         def.value = def.hasValue && def.value;
         def.accept = def.hasAccept ? createWhiteList(def.hasAccept) : NOOP;
-        def.name = name;
+        def.name = (asActions && name[0] !== '$') ? '$' + name : name;
 
         data[name] = def;
 
@@ -4560,7 +4585,7 @@ Muta.cog = function cog(def){
 
     def.states = prepDataDefs(def.states);
     def.belts  = prepDataDefs(def.belts);
-    def.actions  = prepDataDefs(def.actions);
+    def.actions  = prepDataDefs(def.actions, true);
 
     ScriptLoader.currentScript = def;
 

@@ -9,20 +9,19 @@ Muta.cog({
 
     display: '<div name="app" class="main"></div>',
 
-
     alias: [
         {name: 'APP_ROOT', url: './'},
         {name: 'COMPONENTS', url: '../components'},
         {name: 'BUTTON', url: 'button.js', root: 'COMPONENTS'}
     ],
 
-
     cogs: [
 
         {url: 'header.js', root: 'COMPONENTS', el: 'app', config: {target: '$hop', p: 'pike.js'}},
         {url: 'bunny.js', type: 'chain', el: 'app', source: 'stuff'},
         {url: 'header.js', root: 'COMPONENTS', el: 'app', config: {target: '$hop', p: 'gar.js'}},
-        {url: 'puppy', type: 'gear'}
+        {url: 'puppy', type: 'gear'},
+        {url: 'greeny', type: 'gear'}
 
     ],
 
@@ -39,16 +38,17 @@ Muta.cog({
 
     states: {
 
+        greeny: 'turtle.js',
         catfish: 'fluff.js',
         puppy: 'frog.js',
         appTitle: 'KILL LIST',
-        hop: 'cow.js',
-        stuff: {value: [1,2,3,4]}
+
     },
 
     belts: { // todo create both state and $action
         hop: 'cow.js',
-        stuff: {value: [1,2,3,4]}
+        stuff: {value: [1,2,3,4]},
+        guppy: 'fluff.js'
     }
 
     // actions: {

@@ -10,7 +10,7 @@ class Data {
 
     // should only be created via Scope methods
 
-    constructor(scope, name, type) {
+    constructor(scope, name) {
 
         this._scope       = scope;
         this._action      = isAction(name);
@@ -126,7 +126,6 @@ function NoopSource() {
 NoopSource.prototype.init = function init() {};
 NoopSource.prototype.pull = function pull() {};
 NoopSource.prototype.destroy = function destroy() {};
-
 
 const stubs = {init:'init', pull:'pull', destroy:'destroy'};
 
@@ -2564,6 +2563,7 @@ class Scope{
         this._name = name;
         this._parent = null;
         this._children = [];
+        this._belts = {};
         this._buses = [];
         this._dataMap = new Map();
         this._valveMap = new Map();
@@ -2690,6 +2690,21 @@ class Scope{
     demand(name){
 
         return this.grab(name) || this._createData(name);
+
+    };
+
+
+    belt(stateName){
+
+        const actionName = '$' + stateName;
+        const state = this.demand(stateName);
+        const action = this.demand(actionName);
+
+        if(!this._belts[stateName]) {
+            this._belts[stateName] = this.bus(actionName + '|=' + stateName);
+        }
+
+        return state;
 
     };
 

@@ -34,7 +34,7 @@ function createWhiteList(v){
     return TRUE;
 }
 
-function prepDataDefs(data){
+function prepDataDefs(data, asActions){
 
     if(!data)
         return data;
@@ -49,7 +49,7 @@ function prepDataDefs(data){
         def.hasAccept = def.hasOwnProperty('accept');
         def.value = def.hasValue && def.value;
         def.accept = def.hasAccept ? createWhiteList(def.hasAccept) : NOOP;
-        def.name = name;
+        def.name = (asActions && name[0] !== '$') ? '$' + name : name;
 
         data[name] = def;
 
@@ -84,7 +84,7 @@ Muta.cog = function cog(def){
 
     def.states = prepDataDefs(def.states);
     def.belts  = prepDataDefs(def.belts);
-    def.actions  = prepDataDefs(def.actions);
+    def.actions  = prepDataDefs(def.actions, true);
 
     ScriptLoader.currentScript = def;
 

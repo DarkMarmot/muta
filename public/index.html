@@ -14,6 +14,41 @@
 
     Muta.init(document.querySelector('#app'),  './app/main.js');
 
+    function interleave() {
+
+        const args = this.arguments;
+        const arr = [];
+        let max1 = 0;
+        let max2 = 0;
+
+        for (let i = 0; i < args.length; i++) {
+
+            const n = Number(args[i]);
+            let s = (n).toString(2);
+
+            let periodAt = s.indexOf('.');
+            if(s.indexOf('.')===-1){
+                s = s + '.0';
+            }
+
+            const chunks = s.split()
+            if (s.length > max) {
+                max = s.length;
+            }
+
+        }
+
+        for (let i = 0; i < arr.length; i++){
+            const s = arr[i];
+            for (let j = s.length; j < max; j++) {
+
+
+            }
+        }
+
+
+    }
+
 </script>
 
 

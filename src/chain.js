@@ -96,9 +96,10 @@ Chain.prototype.prep = function(){
 
     const parent = this.parent;
     const aliasValveMap = parent ? parent.aliasValveMap : null;
-    const aliasList = this.script.alias;
+    //const aliasList = this.script.alias;
+    const aliasHash = this.script.aliases;
 
-    if(parent && parent.root === this.root && !aliasList && !aliasValveMap){
+    if(parent && parent.root === this.root && !aliasHash && !aliasValveMap){
         // same relative path, no new aliases and no valves, reuse parent context
         this.aliasContext = parent.aliasContext;
         this.aliasContext.shared = true;
@@ -108,7 +109,8 @@ Chain.prototype.prep = function(){
             ? parent.aliasContext.clone()
             : new AliasContext(this.root); // root of application
         this.aliasContext.restrictAliasList(aliasValveMap);
-        this.aliasContext.injectAliasList(aliasList);
+        //this.aliasContext.injectAliasList(aliasList);
+        this.aliasContext.injectAliasHash(aliasHash);
     }
 
     this.loadBooks();

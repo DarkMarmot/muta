@@ -20,7 +20,7 @@ class Data {
         this._present     = false;  // true if a value has been received
         this._private     = isPrivate(name);
         this._readable    = !this._action;
-        this._writable    = true; // false when mirrored
+        this._writable    = true; // false when mirrored or calculated?
         this._subscribers = [];
 
     };
@@ -30,7 +30,6 @@ class Data {
     get dead() { return this._dead; };
     get present() { return this._present; };
     get private() { return this._private; };
-
 
     destroy(){
 
@@ -62,7 +61,6 @@ class Data {
         return this;
 
     };
-
 
     silentWrite(msg){
 
@@ -126,6 +124,7 @@ function NoopSource() {
 NoopSource.prototype.init = function init() {};
 NoopSource.prototype.pull = function pull() {};
 NoopSource.prototype.destroy = function destroy() {};
+
 
 const stubs = {init:'init', pull:'pull', destroy:'destroy'};
 
@@ -2563,7 +2562,7 @@ class Scope{
         this._name = name;
         this._parent = null;
         this._children = [];
-        this._belts = {};
+        this._wires = {};
         this._buses = [];
         this._dataMap = new Map();
         this._valveMap = new Map();
@@ -2694,14 +2693,14 @@ class Scope{
     };
 
 
-    belt(stateName){
+    wire(stateName){
 
         const actionName = '$' + stateName;
         const state = this.demand(stateName);
         const action = this.demand(actionName);
 
-        if(!this._belts[stateName]) {
-            this._belts[stateName] = this.bus(actionName + '|=' + stateName);
+        if(!this._wires[stateName]) {
+            this._wires[stateName] = this.bus(actionName + '|=' + stateName);
         }
 
         return state;

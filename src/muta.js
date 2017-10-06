@@ -83,7 +83,7 @@ Muta.cog = function cog(def){
     }
 
     def.states = prepDataDefs(def.states);
-    def.belts  = prepDataDefs(def.belts);
+    def.wires  = prepDataDefs(def.wires);
     def.actions  = prepDataDefs(def.actions, true);
 
     ScriptLoader.currentScript = def;

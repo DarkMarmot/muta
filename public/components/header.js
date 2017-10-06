@@ -19,9 +19,14 @@ Muta.cog({
         gg: '@click | *rnd | =$guppy'
     },
 
-    states:
-        {dog: 'dog.js'}
+    states: {
+            dog: 'dog.js'
+        }
     ,
+
+    calc: {
+        bunny: 'dog | *toBog'
+    },
 
     rnd: function(){
       if(Math.random() < .5){

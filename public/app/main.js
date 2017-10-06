@@ -9,11 +9,13 @@ Muta.cog({
 
     display: '<div name="app" class="main"></div>',
 
-    alias: [
-        {name: 'APP_ROOT', url: './'},
-        {name: 'COMPONENTS', url: '../components'},
-        {name: 'BUTTON', url: 'button.js', root: 'COMPONENTS'}
-    ],
+
+    aliases: {
+        BUTTON: 'COMPONENTS button.js',
+        APP_ROOT: './',
+        COMPONENTS: '../components'
+
+    },
 
     cogs: [
 
@@ -26,46 +28,21 @@ Muta.cog({
     ],
 
 
-    // states: [
-    //     {name: '$hop'},
-    //     {name: 'hop', value: 'cow.js'},
-    //     {name: 'catfish', value: 'fluff.js'},
-    //     {name: 'puppy', value: 'frog.js'},
-    //     {name: 'appTitle', value: 'KILL LIST'},
-    //     {name: '$stuff'},
-    //     {name: 'stuff', value: [1,2,3,4]}
-    // ],
-
     states: {
 
-        greeny: 'turtle.js',
-        catfish: 'fluff.js',
-        puppy: 'frog.js',
+        greeny  : 'turtle.js',
+        catfish : 'fluff.js',
+        puppy   : 'frog.js',
         appTitle: 'KILL LIST',
 
     },
 
-    belts: { // todo create both state and $action
+    wires: {
         hop: 'cow.js',
         stuff: {value: [1,2,3,4]},
         guppy: 'fluff.js'
-    }
+    },
 
-    // actions: {
-    //     $hop: {},
-    //     $stuff: {}
-    // },
-
-    // buses: [
-    //     '$stuff | =stuff',
-    //     '$hop | =hop'
-    // ]
-
-    // actions: {
-    //     catfish: 'fluff.js',
-    //     addPatient: '*verifyPatient | patientList',
-    // }
-    ,
 
     stuffLog: function(m){
         console.log('stu', m);

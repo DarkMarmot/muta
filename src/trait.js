@@ -11,6 +11,7 @@ function Trait(cog, def){
     this.script.cog = cog.script;
     this.script.config = this.config;
     this.script.api = cog.api;
+    this.scope = cog.scope.createChild();
 
 }
 

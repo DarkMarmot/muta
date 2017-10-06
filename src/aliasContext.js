@@ -39,11 +39,74 @@ AliasContext.prototype.injectAlias = function(alias){
 };
 
 AliasContext.prototype.injectAliasList = function(aliasList){
+
+
     for(let i = 0; i < aliasList.length; i++){
         this.injectAlias(aliasList[i]);
     }
     return this;
 };
+
+AliasContext.prototype.injectAliasHash = function(aliasHash){
+
+
+    const list = [];
+    const hash = {};
+
+    for(const name in aliasHash){
+
+        let url = '', root = '';
+        const val = aliasHash[name];
+        const parts = val.trim().split(' ');
+
+        if(parts.length === 1){
+            url = parts[0];
+        } else {
+            root = parts[0];
+            url = parts[1];
+        }
+
+        const alias = {name: name, url: url, root: root, dependent: false, placed: false};
+        hash[name] = alias;
+        list.push(alias);
+
+    }
+
+    for(let i = 0; i < list.length; i++){
+        const alias = list[i];
+        if(alias.root && hash.hasOwnProperty(alias.root)){
+            alias.dependent = true; // locally dependent on other aliases in this list
+        }
+    }
+
+    const addedList = [];
+
+
+    while(addedList.length < list.length) {
+
+        let justAdded = 0;
+        for (let i = 0; i < list.length; i++) {
+            const alias = list[i];
+            if(!alias.placed) {
+                if (!alias.dependent || hash[alias.root].placed) {
+                    justAdded++;
+                    alias.placed = true;
+                    addedList.push(alias);
+                }
+            }
+        }
+
+        if(justAdded === 0){
+            throw new Error('Cyclic Alias Dependency!');
+        }
+    }
+
+    for(let i = 0; i < addedList.length; i++){
+        this.injectAlias(addedList[i]);
+    }
+    return this;
+};
+
 
 // given a list of objects with url and root, get urls not yet downloaded
 

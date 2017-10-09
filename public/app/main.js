@@ -11,6 +11,7 @@ Muta.cog({
 
 
     aliases: {
+
         BUTTON: 'COMPONENTS button.js',
         APP_ROOT: './',
         COMPONENTS: '../components'
@@ -19,14 +20,19 @@ Muta.cog({
 
     cogs: [
 
-        {url: 'header.js', root: 'COMPONENTS', el: 'app', config: {target: '$hop', p: 'pike.js'}},
+        {url: 'COMPONENTS header.js', el: 'app', config: {target: '$hop', p: 'pike.js'}},
         {url: 'bunny.js', type: 'chain', el: 'app', source: 'stuff'},
-        {url: 'header.js', root: 'COMPONENTS', el: 'app', config: {target: '$hop', p: 'gar.js'}},
+        {url: 'COMPONENTS header.js', el: 'app', config: {target: '$hop', p: 'gar.js'}},
         {url: 'puppy', type: 'gear'},
         {url: 'greeny', type: 'gear'}
 
     ],
 
+    cogss: [
+        {   url: 'COMPONENTS header.js' },
+        {   gear: 'puppy' },
+        {   chain: 'bunny.js', source: ''}
+    ],
 
     states: {
 
@@ -39,7 +45,7 @@ Muta.cog({
 
     wires: {
         hop: 'cow.js',
-        stuff: {value: [1,2,3,4]},
+        stuff: {value: [1,2,3,4]}, // init function, accept function,
         guppy: 'fluff.js'
     },
 

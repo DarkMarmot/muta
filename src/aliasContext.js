@@ -23,6 +23,8 @@ function AliasContext(sourceRoot, aliasMap, valveMap){
 
 }
 
+
+
 AliasContext.prototype.clone = function(){
     return new AliasContext(this.sourceRoot, this.aliasMap);
 };
@@ -152,6 +154,22 @@ AliasContext.prototype.resolveRoot = function resolveRoot(url, base){
     const baseCache = cache[base] = cache[base] || {};
     return baseCache[url] = baseCache[url] ||
         PathResolver.resolveRoot(this.aliasMap, url, base);
+
+};
+
+AliasContext.applySplitUrl = function applySplitUrl(def){
+
+    let url = def.url || '';
+
+    const parts = url.trim().split(' ');
+
+    if(parts.length === 1){
+        def.url = parts[0];
+        def.root = '';
+    } else {
+        def.root = parts[0];
+        def.url = parts[1];
+    }
 
 };
 

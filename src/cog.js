@@ -294,6 +294,8 @@ Cog.prototype.buildCogs = function buildCogs(){
     for(let i = 0; i < len; ++i){
 
         const def = cogs[i];
+        AliasContext.applySplitUrl(def);
+
         const el = this.getNamedElement(def.el);
         const before = !!(el && def.before);
         const isHead = (i === 0 && this.elements.length === 0) ||

@@ -91,6 +91,7 @@ PartBuilder.buildRelays = function buildRelays(){
         if(stateProp)
             stateName = (stateProp[0] === '$') ? stateProp.substr(1) : stateProp;
 
+        // todo -- make $ prefix correct on these too, put in separate function
         const remoteActionName = actionProp && config[actionProp];
         const remoteStateName = stateProp && config[stateProp];
 

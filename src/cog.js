@@ -14,6 +14,7 @@ let _id = 0;
 function Cog(url, el, before, parent, config, index, key){
 
     this.id = ++_id;
+    this.type = 'cog';
     this.dead = false;
     this.firstElement = null;
     this.head = null;
@@ -32,6 +33,9 @@ function Cog(url, el, before, parent, config, index, key){
     this.script = null;
     this.config = config || {};
     this.source = this.scope.demand('source');
+
+
+
     this.index = index;
     this.key = key;
     this.scriptMonitor = null;
@@ -43,6 +47,18 @@ function Cog(url, el, before, parent, config, index, key){
 
     this.traitInstances = [];
     this.busInstances = [];
+
+    if(parent && parent.type === 'cog') {
+        const d = this.scope.demand('config');
+        const c = this.config;
+        if(typeof c === 'string'){
+            const nyan = c + ' | config';
+            this.buildBusFromNyan(nyan).pull();
+        } else {
+           d.write(c);
+        }
+
+    }
 
     this.usePlaceholder();
     this.load();
@@ -123,6 +139,7 @@ Cog.prototype.onScriptReady = function() {
     this.script = Object.create(def);
     this.script.id = this.id;
     this.script.config = this.config;
+    this.script.cog = this;
     this.root = this.script.root;
     this.prep();
 
@@ -394,6 +411,8 @@ Cog.prototype.build = function build(){ // urls loaded
 
     // script.prep is called earlier
 
+    this.mount(); // mounts display, calls script.mount, then mount for all traits
+
     this.buildStates();
     this.buildWires();
     this.buildActions();
@@ -403,7 +422,6 @@ Cog.prototype.build = function build(){ // urls loaded
     this.script.init();
 
     this.initTraits(); // calls init on all traits
-    this.mount(); // mounts display, calls script.mount, then mount for all traits
 
     this.buildBuses();
     this.buildEvents();

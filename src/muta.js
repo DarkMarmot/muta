@@ -4,7 +4,7 @@ import ScriptLoader from './scriptLoader.js';
 import ScriptMonitor from './scriptMonitor.js';
 import Cog from './cog.js';
 
-const Muta = {};
+let Muta = {};
 const NOOP = function(){};
 const TRUE = function(){ return true;};
 
@@ -43,7 +43,7 @@ function prepDataDefs(data, asActions){
 
 
         const val = data[name];
-        const def = typeof val === 'object' ? val : {value: val};
+        const def = val && typeof val === 'object' ? val : {value: val};
 
         def.hasValue = def.hasOwnProperty('value');
         def.hasAccept = def.hasOwnProperty('accept');
@@ -96,6 +96,7 @@ Muta.trait = function trait(def){
     def.type = 'trait';
     def.config = null;
     def.cog = null; // becomes cog script instance
+    def.trait = null;
 
     for(let i = 0; i < defaultMethods.length; i++){
         const name = defaultMethods[i];

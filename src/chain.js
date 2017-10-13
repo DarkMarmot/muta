@@ -36,6 +36,19 @@ function Chain(url, el, before, parent, config, sourceName, keyField){
     this.keyField = keyField;
     this.bus = null;
 
+    if(parent && parent.type !== 'chain') {
+        const d = this.scope.demand('config');
+        const c = this.config;
+        if(typeof c === 'string'){
+            const nyan = c + ' | config';
+            this.buildBusFromNyan(nyan).pull();
+        } else {
+            d.write(c);
+        }
+
+    }
+
+
     this.usePlaceholder();
     this.load();
 
@@ -216,9 +229,10 @@ Chain.prototype.buildCogsByIndex = function buildCogsByIndex(msg){
 
     if(len === 0 && childCount > 0){
 
-        // restore placeholder as all children gone
+        // todo assert no placeholder
+        // restore placeholder as all children will be gone
+        const el = this.getFirstElement(); // grab first child element
         this.placeholder = this.placeholder || Placeholder.take();
-        const el = this.getFirstElement();
         el.parentNode.insertBefore(this.placeholder, el);
 
     }
@@ -234,6 +248,8 @@ Chain.prototype.buildCogsByIndex = function buildCogsByIndex(msg){
         for (let i = childCount; i < len; ++i) {
             // create cogs for new data
             const cog = new Cog(this.url, el, before, this, this.config, i);
+            const d = msg[i];
+            cog.source.write(d);
             children.push(cog);
 
         }
@@ -247,8 +263,11 @@ Chain.prototype.buildCogsByIndex = function buildCogsByIndex(msg){
         }
     }
 
+    this.tail = children.length > 0 ? children[children.length - 1] : null;
+    this.head = children.length > 0 ? children[0] : null;
 
-
+    if(len > 0)
+        this.killPlaceholder();
 
 };
 

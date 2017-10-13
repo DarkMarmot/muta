@@ -12,6 +12,9 @@ PathResolver.resolveUrl = function resolveUrl(aliasMap, url, root) {
 
     url = aliasMap ? (aliasMap[url] || url) : url;
 
+    if(!url){
+        console.log('argh',url);
+    }
     if(root && url.indexOf('http') !== 0)  {
 
             root = aliasMap ? (aliasMap[root] || root) : root;

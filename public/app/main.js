@@ -28,8 +28,8 @@ Muta.cog({
 
     ],
 
-    cogss: [
-        {   url: 'COMPONENTS header.js' },
+    comps: [
+        {   cog: 'COMPONENTS header.js', slot: 'cow' },
         {   gear: 'puppy' },
         {   chain: 'bunny.js', source: ''}
     ],
@@ -43,7 +43,17 @@ Muta.cog({
 
     },
 
+    traits: [
+        // {trait: 'WS', api: 'API getCows', params: 'cow', response: '+meow', error: '+meowErr', auto: true}
+    ],
+
+
+    actions: {
+
+    },
+
     wires: {
+        selCat: 'meow',
         hop: 'cow.js',
         stuff: {value: [1,2,3,4]}, // init function, accept function,
         guppy: 'fluff.js'

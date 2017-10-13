@@ -285,6 +285,12 @@ ForkStream.prototype.handle = function handle(msg, source) {
 
 };
 
+ForkStream.prototype.reset = function reset(msg){
+
+    this.next.reset(msg);
+    this.fork.reset(msg);
+};
+
 NOOP_STREAM.addStubs(ForkStream);
 
 function BatchStream(name) {
@@ -312,7 +318,10 @@ BatchStream.prototype.emit = function emit() { // called from enqueue scheduler
     const msg = this.msg;
     const source = this.name;
 
+    this.latched = false; // can queue again
     this.next.handle(msg, source);
+
+
 
 };
 
@@ -1038,6 +1047,13 @@ const Nyan = {};
 
 const operationDefs = [
 
+    // rm: =, ^
+    // change: : = alias, # = hash, () = args for cmd, & = cmd
+    // = = transaction,
+
+    // &filter(true) &throttle(200)
+
+
     // config is a dash
     // . is a prop
     {name: 'ACTION', sym: '^',  react: true, subscribe: true, need: true, solo: true},
@@ -1055,6 +1071,8 @@ const operationDefs = [
     {name: 'FILTER', sym: '>',  then: true }
 
 ];
+
+
 
 // cat, dog | & meow, kitten {*log} | =puppy
 
@@ -1410,27 +1428,6 @@ function throwError(msg){
     throw e;
 }
 
-function getDoSkipNamedDupes(names){
-
-    let lastMsg = {};
-    const len = names.length;
-
-    return function doSkipNamedDupes(msg) {
-
-        let diff = false;
-        for(let i = 0; i < len; i++){
-            const name = names[i];
-            if(!lastMsg.hasOwnProperty(name) || lastMsg[name] !== msg[name])
-                diff = true;
-            lastMsg[name] = msg[name];
-        }
-
-        return diff;
-
-    };
-}
-
-
 function getDoSpray(scope, phrase){
 
     const wordByAlias = {};
@@ -1669,7 +1666,7 @@ function applyReaction(scope, bus, phrase, target, lookup) { // target is some e
 
         if(operation === 'WATCH') {
             addDataSource(bus, scope, word);
-            skipDupes.push(word.alias);
+            //skipDupes.push(word.alias)
         }
         else if(operation === 'WIRE'){
             addDataSource(bus, scope, word);
@@ -1698,9 +1695,9 @@ function applyReaction(scope, bus, phrase, target, lookup) { // target is some e
         if(need.length)
             bus.hasKeys(need);
 
-        if(skipDupes.length){
-            bus.filter(getDoSkipNamedDupes(skipDupes));
-        }
+        // if(skipDupes.length){
+        //     bus.filter(getDoSkipNamedDupes(skipDupes));
+        // }
 
     } else {
 
@@ -3148,6 +3145,9 @@ PathResolver.resolveUrl = function resolveUrl(aliasMap, url, root) {
 
     url = aliasMap ? (aliasMap[url] || url) : url;
 
+    if(!url){
+        console.log('argh',url);
+    }
     if(root && url.indexOf('http') !== 0)  {
 
             root = aliasMap ? (aliasMap[root] || root) : root;
@@ -3550,18 +3550,196 @@ Placeholder.give = function(el){
         el.parentNode.removeChild(el);
 };
 
+const PartBuilder = {};
+
+
+
+
+
+PartBuilder.buildStates = function buildStates(){
+
+    const script = this.script;
+    const scope  = this.scope;
+    const states = script.states;
+
+    for(const name in states){
+
+        const def = states[name];
+        const state = scope.demand(name);
+
+        if(def.hasValue) {
+
+            const value = typeof def.value === 'function'
+                ? def.value.call(script)
+                : def.value;
+
+            state.write(value, true);
+        }
+
+    }
+
+    for(const name in states){
+
+        const state = scope.grab(name);
+        state.refresh();
+
+    }
+
+};
+
+
+PartBuilder.buildWires = function buildWires(){
+
+    const wires = this.script.wires;
+
+    for(const name in wires){
+
+        const def = wires[name];
+        const state = this.scope.wire(name);
+
+        if(def.hasValue) {
+
+            const value = typeof def.value === 'function'
+                ? def.value.call(this.script)
+                : def.value;
+
+            state.write(value, true);
+
+        }
+
+    }
+
+    for(const name in wires){
+
+        const state = this.scope.grab(name);
+        state.refresh();
+
+    }
+
+};
+
+
+PartBuilder.buildRelays = function buildRelays(){
+
+    const scope = this.scope;
+    const config = this.config;
+    const relays = this.script.relays;
+    const len = relays.length;
+
+    for(let i = 0; i < len; ++i){
+
+        const def = relays[i];
+
+        const actionProp = def.action || def.wire;
+        const stateProp = def.state || def.wire;
+
+        let actionName = null;
+        let stateName = null;
+
+        if(actionProp)
+            actionName = (actionProp[0] !== '$') ? '$' + actionProp : actionProp;
+
+        if(stateProp)
+            stateName = (stateProp[0] === '$') ? stateProp.substr(1) : stateProp;
+
+        // todo -- make $ prefix correct on these too, put in separate function
+        const remoteActionName = actionProp && config[actionProp];
+        const remoteStateName = stateProp && config[stateProp];
+
+        let remoteAction = remoteActionName ? scope.find(remoteActionName, true) : null;
+        let remoteState = remoteStateName ? scope.find(remoteStateName, true) : null;
+
+        let localAction = actionName ? scope.demand(actionName) : null;
+        let localState = stateName ? scope.demand(stateName) : null;
+
+        if(actionName && !stateName && remoteAction){ // only action goes out relay
+            scope.bus().addSubscribe(actionName, localAction).write(remoteAction);
+        }
+
+        if(stateName && !actionName && remoteState){ // only state comes in relay
+            scope.bus().addSubscribe(remoteStateName, remoteState).write(localState).pull();
+        }
+
+        if(actionName && stateName){ // defines both
+            if(remoteAction && remoteState){ // wire action and state (wire together above)
+                scope.bus().addSubscribe(actionName, localAction).write(remoteAction);
+                scope.bus().addSubscribe(remoteStateName, remoteState).write(localState).pull();
+            } else if (remoteAction && !remoteState){
+                // assert relay has action sans state
+            } else if (remoteState && !remoteAction){
+                // assert relay has state sans action
+            } else { // neither configured, wire locally
+                // warning -- relay disconnected
+                scope.bus().addSubscribe(actionName, localAction).write(localState);
+            }
+        }
+
+
+    }
+
+};
+
+
+PartBuilder.buildActions = function buildActions(){
+
+    const actions = this.script.actions;
+    const len = actions.length;
+
+    for(let i = 0; i < len; ++i){
+
+        const def = actions[i];
+        this.scope.action(def.name);
+        // also {bus, accept}
+
+    }
+
+};
+
 function Trait(cog, def){
 
     this.cog = cog;
-    this.config = def.config || {};
+    this.config = def.config || def;
     this.url = cog.aliasContext.resolveUrl(def.url, def.root);
     this.script = Object.create(ScriptLoader.read(this.url));
-    this.script.cog = cog.script;
+    this.script.cog = cog;
+    this.script.trait = this;
     this.script.config = this.config;
     this.script.api = cog.api;
     this.scope = cog.scope.createChild();
 
+   this.buildRelays();
+   this.buildBuses();
+
 }
+
+Trait.prototype.buildRelays = PartBuilder.buildRelays;
+
+Trait.prototype.buildBuses = function buildBuses(){
+
+    const buses = this.script.buses || [];
+    const wires = this.script.wires || [];
+
+    const len = buses.length;
+
+    for(const name in wires){
+        const bus = this.scope._wires[name];
+        bus.pull();
+    }
+
+    for(let i = 0; i < len; ++i){
+
+        const def = buses[i];
+        const bus = this.buildBusFromNyan(def); // todo add function support not just nyan str
+        bus.pull();
+
+    }
+
+};
+
+
+Trait.prototype.buildBusFromNyan = function buildBusFromNyan(nyanStr, el){
+    return this.scope.bus(nyanStr, this.script, el);
+};
 
 let _id$1 = 0;
 
@@ -3718,6 +3896,19 @@ function Chain(url, el, before, parent, config, sourceName, keyField){
     this.sourceName = sourceName;
     this.keyField = keyField;
     this.bus = null;
+
+    if(parent && parent.type !== 'chain') {
+        const d = this.scope.demand('config');
+        const c = this.config;
+        if(typeof c === 'string'){
+            const nyan = c + ' | config';
+            this.buildBusFromNyan(nyan).pull();
+        } else {
+            d.write(c);
+        }
+
+    }
+
 
     this.usePlaceholder();
     this.load();
@@ -3899,9 +4090,10 @@ Chain.prototype.buildCogsByIndex = function buildCogsByIndex(msg){
 
     if(len === 0 && childCount > 0){
 
-        // restore placeholder as all children gone
+        // todo assert no placeholder
+        // restore placeholder as all children will be gone
+        const el = this.getFirstElement(); // grab first child element
         this.placeholder = this.placeholder || Placeholder.take();
-        const el = this.getFirstElement();
         el.parentNode.insertBefore(this.placeholder, el);
 
     }
@@ -3917,6 +4109,8 @@ Chain.prototype.buildCogsByIndex = function buildCogsByIndex(msg){
         for (let i = childCount; i < len; ++i) {
             // create cogs for new data
             const cog = new Cog(this.url, el, before, this, this.config, i);
+            const d = msg[i];
+            cog.source.write(d);
             children.push(cog);
 
         }
@@ -3930,8 +4124,11 @@ Chain.prototype.buildCogsByIndex = function buildCogsByIndex(msg){
         }
     }
 
+    this.tail = children.length > 0 ? children[children.length - 1] : null;
+    this.head = children.length > 0 ? children[0] : null;
 
-
+    if(len > 0)
+        this.killPlaceholder();
 
 };
 
@@ -3983,155 +4180,12 @@ Chain.prototype.destroy = function(){
 
 };
 
-const PartBuilder = {};
-
-
-
-
-
-PartBuilder.buildStates = function buildStates(){
-
-    const script = this.script;
-    const scope  = this.scope;
-    const states = script.states;
-
-    for(const name in states){
-
-        const def = states[name];
-        const state = scope.demand(name);
-
-        if(def.hasValue) {
-
-            const value = typeof def.value === 'function'
-                ? def.value.call(script)
-                : def.value;
-
-            state.write(value, true);
-        }
-
-    }
-
-    for(const name in states){
-
-        const state = scope.grab(name);
-        state.refresh();
-
-    }
-
-};
-
-
-PartBuilder.buildWires = function buildWires(){
-
-    const wires = this.script.wires;
-
-    for(const name in wires){
-
-        const def = wires[name];
-        const state = this.scope.wire(name);
-
-        if(def.hasValue) {
-
-            const value = typeof def.value === 'function'
-                ? def.value.call(this.script)
-                : def.value;
-
-            state.write(value, true);
-
-        }
-
-    }
-
-    for(const name in wires){
-
-        const state = this.scope.grab(name);
-        state.refresh();
-
-    }
-
-};
-
-
-PartBuilder.buildRelays = function buildRelays(){
-
-    const scope = this.scope;
-    const config = this.config;
-    const relays = this.script.relays;
-    const len = relays.length;
-
-    for(let i = 0; i < len; ++i){
-
-        const def = relays[i];
-
-        const actionProp = def.action || def.wire;
-        const stateProp = def.state || def.wire;
-
-        let actionName = null;
-        let stateName = null;
-
-        if(actionProp)
-            actionName = (actionProp[0] !== '$') ? '$' + actionProp : actionProp;
-
-        if(stateProp)
-            stateName = (stateProp[0] === '$') ? stateProp.substr(1) : stateProp;
-
-        const remoteActionName = actionProp && config[actionProp];
-        const remoteStateName = stateProp && config[stateProp];
-
-        let remoteAction = remoteActionName ? scope.find(remoteActionName, true) : null;
-        let remoteState = remoteStateName ? scope.find(remoteStateName, true) : null;
-
-        let localAction = actionName ? scope.demand(actionName) : null;
-        let localState = stateName ? scope.demand(stateName) : null;
-
-        if(actionName && !stateName && remoteAction){ // only action goes out relay
-            scope.bus().addSubscribe(actionName, localAction).write(remoteAction);
-        }
-
-        if(stateName && !actionName && remoteState){ // only state comes in relay
-            scope.bus().addSubscribe(remoteStateName, remoteState).write(localState).pull();
-        }
-
-        if(actionName && stateName){ // defines both
-            if(remoteAction && remoteState){ // wire action and state (wire together above)
-                scope.bus().addSubscribe(actionName, localAction).write(remoteAction);
-                scope.bus().addSubscribe(remoteStateName, remoteState).write(localState).pull();
-            } else if (remoteAction && !remoteState){
-                // assert relay has action sans state
-            } else if (remoteState && !remoteAction){
-                // assert relay has state sans action
-            } else { // neither configured, wire locally
-                // warning -- relay disconnected
-                scope.bus().addSubscribe(actionName, localAction).write(localState);
-            }
-        }
-
-
-    }
-
-};
-
-
-PartBuilder.buildActions = function buildActions(){
-
-    const actions = this.script.actions;
-    const len = actions.length;
-
-    for(let i = 0; i < len; ++i){
-
-        const def = actions[i];
-        this.scope.action(def.name);
-        // also {bus, accept}
-
-    }
-
-};
-
 let _id = 0;
 
 function Cog(url, el, before, parent, config, index, key){
 
     this.id = ++_id;
+    this.type = 'cog';
     this.dead = false;
     this.firstElement = null;
     this.head = null;
@@ -4150,6 +4204,9 @@ function Cog(url, el, before, parent, config, index, key){
     this.script = null;
     this.config = config || {};
     this.source = this.scope.demand('source');
+
+
+
     this.index = index;
     this.key = key;
     this.scriptMonitor = null;
@@ -4161,6 +4218,18 @@ function Cog(url, el, before, parent, config, index, key){
 
     this.traitInstances = [];
     this.busInstances = [];
+
+    if(parent && parent.type === 'cog') {
+        const d = this.scope.demand('config');
+        const c = this.config;
+        if(typeof c === 'string'){
+            const nyan = c + ' | config';
+            this.buildBusFromNyan(nyan).pull();
+        } else {
+           d.write(c);
+        }
+
+    }
 
     this.usePlaceholder();
     this.load();
@@ -4241,6 +4310,7 @@ Cog.prototype.onScriptReady = function() {
     this.script = Object.create(def);
     this.script.id = this.id;
     this.script.config = this.config;
+    this.script.cog = this;
     this.root = this.script.root;
     this.prep();
 
@@ -4512,6 +4582,8 @@ Cog.prototype.build = function build(){ // urls loaded
 
     // script.prep is called earlier
 
+    this.mount(); // mounts display, calls script.mount, then mount for all traits
+
     this.buildStates();
     this.buildWires();
     this.buildActions();
@@ -4521,7 +4593,6 @@ Cog.prototype.build = function build(){ // urls loaded
     this.script.init();
 
     this.initTraits(); // calls init on all traits
-    this.mount(); // mounts display, calls script.mount, then mount for all traits
 
     this.buildBuses();
     this.buildEvents();
@@ -4605,7 +4676,7 @@ function _ASSERT_HTML_ELEMENT_EXISTS(name, el){
     }
 }
 
-const Muta = {};
+let Muta = {};
 const NOOP = function(){};
 const TRUE = function(){ return true;};
 
@@ -4644,7 +4715,7 @@ function prepDataDefs(data, asActions){
 
 
         const val = data[name];
-        const def = typeof val === 'object' ? val : {value: val};
+        const def = val && typeof val === 'object' ? val : {value: val};
 
         def.hasValue = def.hasOwnProperty('value');
         def.hasAccept = def.hasOwnProperty('accept');
@@ -4697,6 +4768,7 @@ Muta.trait = function trait(def){
     def.type = 'trait';
     def.config = null;
     def.cog = null; // becomes cog script instance
+    def.trait = null;
 
     for(let i = 0; i < defaultMethods.length; i++){
         const name = defaultMethods[i];

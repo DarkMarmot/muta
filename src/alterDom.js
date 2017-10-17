@@ -1,12 +1,13 @@
 
 function AlterDom(el) {
+
     this._el = el;
     this._display = this.style.display;
     this._visible = false;
 
 }
 
-// todo add getter for el
+// todo add getter for el (read only)
 
 AlterDom.prototype.focus = function focus() {
     this._el.focus();
@@ -61,7 +62,7 @@ AlterDom.prototype.hideDisplay = function hideDisplay(display) {
 };
 
 
-AlterDom.prototype._updateDisplay = function _updateDisplay(display) {
+AlterDom.prototype._updateDisplay = function _updateDisplay() {
 
     const display = this._visible ? this._display || 'block' : 'none';
     this._el.style.display = display;
@@ -80,163 +81,77 @@ AlterDom.prototype.toggleClasses = function(changes){
     const current = this._el.className.split(' ').reduce(toHash, {});
 
     for(const k in changes){
-
-        const request = changes[k];
-        current[k] = !request;
-
+        current[k] = changes[k];
     }
 
-    let result = '';
+    const result = [];
     for(const k in current) {
         if(current[k])
-            result += k;
+            result.push(k);
     }
 
-    this._el.className = result;
+    this._el.className = result.join(' ');
     return this;
 
 };
 
-    Rei.prototype.toggleClass = function(nameOrNames, add){
+AlterDom.prototype.toggleClass = function(name, present){
+    const p = {};
+    p[name] = present;
+    return this.toggleClasses(p);
+};
 
-        if(!nameOrNames) return false;
-        var names = nameOrNames.split(' ');
+AlterDom.prototype.removeClass = function(name){
+    const p = {};
+    p[name] = false;
+    return this.toggleClasses(p);
+};
 
-        for(const k in hash){
-            var name = names[i];
-            if(name) {
-                if(arguments.length == 2)
-                    this._toggleClass(name, add);
-                else
-                    this._toggleClassImplicitly(name);
-            }
-        }
+AlterDom.prototype.addClass = function(name){
+    const p = {};
+    p[name] = true;
+    return this.toggleClasses(p);
+};
 
+AlterDom.prototype.attr = function(name, value) {
+    if(typeof value !== 'string') {
+        this._el.removeAttribute(name);
+    } else {
+        this._el.setAttribute(name, value);
+    }
+    return this;
+};
 
-        return this;
-    };
+AlterDom.prototype.attrs = function(changes) {
+    for(const k in changes){
+        this.attr(k, changes[k]);
+    }
+    return this;
+};
 
-    Rei.prototype._toggleClass = function(name, setting){
+AlterDom.prototype.prop = function(name, value) {
+    this._el[name] = value;
+    return this;
+};
 
-        var class_list = this[0].classList;
+AlterDom.prototype.props = function(changes) {
+    for(const k in changes){
+        this.prop(k, changes[k]);
+    }
+    return this;
+};
 
-        if(setting)
-            class_list.add(name);
-        else
-            class_list.remove(name);
+AlterDom.prototype.style = function(name, value) {
+    this._el.style[name] = value;
+    return this;
+};
 
-        return this;
+AlterDom.prototype.styles = function(changes) {
+    for(const k in changes){
+        this.style(k, changes[k]);
+    }
+    return this;
+};
 
-    };
+export default AlterDom;
 
-    Rei.prototype._toggleClassImplicitly = function(name){ // this is a bad way to do things, just for jquery compatibility
-
-        var class_list = this[0].classList;
-
-        if(!class_list.contains(name)) {
-            class_list.add(name);
-        } else {
-            class_list.remove(name);
-        }
-
-        return this;
-    };
-
-
-
-    Rei.prototype.addClass = function(nameOrNames){
-        var names = nameOrNames.split(' ');
-        var class_list = this[0].classList;
-        for(var i = 0; i < names.length; i++){
-            var name = names[i];
-            if(name)
-                class_list.add(name);
-        }
-        return this;
-    };
-
-
-    Rei.prototype.removeClass = function(nameOrNames){
-        if(!nameOrNames){
-            this.removeAllClasses();
-            return this;
-        }
-        var names = nameOrNames.split(' ');
-        var class_list = this[0].classList;
-        for(var i = 0; i < names.length; i++){
-            var name = names[i];
-            if(name)
-                class_list.remove(name);
-        }
-        return this;
-    };
-
-
-    Rei.prototype.removeAllClasses = function(){
-        var arr = [];
-        var i;
-        var list = this[0].classList;
-
-        for(i = 0; i < list.length; i++){
-            arr.push(list.item(i));
-        }
-
-        for(i = 0; i < arr.length; i++){
-            this.removeClass(arr[i]);
-        }
-
-        return this;
-    };
-
-
-    Rei.prototype.prop = function(nameOrOptions, value){
-        var element = this[0];
-        if(arguments.length === 0) return element;
-        if(arguments.length === 2) {
-            element[nameOrOptions] = value;
-        } else {
-            for(var p in nameOrOptions){
-                element[p] = nameOrOptions[p];
-            }
-        }
-        return this;
-    };
-
-    Rei.prototype.css = function(nameOrOptions, value){
-        var style = this[0].style;
-        if(arguments.length === 0) return style;
-        if(arguments.length === 2) {
-            style[nameOrOptions] = value + '';
-        } else {
-            if(typeof nameOrOptions === 'string')
-                return this[0].style[nameOrOptions];
-            for(var p in nameOrOptions){
-                style[p] = nameOrOptions[p] + '';
-            }
-        }
-        return this;
-    };
-
-    Rei.prototype.attr = function(nameOrOptions, value){
-        var attributes = this[0].attributes;
-        if(arguments.length === 0) return attributes;
-        if(arguments.length === 2) {
-            this[0].setAttribute(nameOrOptions, value);
-        } else {
-            if(typeof nameOrOptions === 'string')
-                return this[0].getAttribute(nameOrOptions);
-            for(var p in nameOrOptions){
-                this[0].setAttribute(p, nameOrOptions[p]);
-            }
-        }
-        return this;
-    };
-
-    Rei.prototype.removeAttr = function(name){
-        this[0].removeAttribute(name);
-        return this;
-    };
-
-
-
-}).call(this);

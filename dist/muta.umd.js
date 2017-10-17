@@ -3875,13 +3875,11 @@ let _id$2 = 0;
 function Chain(url, el, before, parent, config, sourceName, keyField){
 
     this.id = ++_id$2;
-    this.firstElement = null;
     this.head = null;
     this.placeholder = null;
     this.el = el; // ref element
     this.before = !!before; // el appendChild or insertBefore
     this.elements = [];
-    this.domElements = [];
     this.namedElements = {};
     this.children = [];
     this.parent = parent || null;
@@ -4180,6 +4178,160 @@ Chain.prototype.destroy = function(){
 
 };
 
+function AlterDom(el) {
+
+    this._el = el;
+    this._display = this.style.display;
+    this._visible = false;
+
+}
+
+// todo add getter for el (read only)
+
+AlterDom.prototype.focus = function focus() {
+    this._el.focus();
+};
+
+AlterDom.prototype.blur = function blur() {
+    this._el.focus();
+};
+
+AlterDom.prototype.value = function value(value) {
+    if(arguments.length === 0) {
+        return this.el.value;
+    }
+    this.value = value;
+};
+
+AlterDom.prototype.toggleFocus = function toggleFocus(focus) {
+
+    focus ? this._el.focus() : this._el.blur();
+
+};
+
+AlterDom.prototype.toggleDisplay = function toggleDisplay(visible) {
+
+    if(arguments.length === 0) {
+        this._visible = !this._visible;
+    } else {
+        this._visible = visible;
+    }
+    this._updateDisplay();
+
+};
+
+AlterDom.prototype.showDisplay = function showDisplay(display) {
+
+    this._visible = true;
+    if(arguments.length === 1) {
+        this._display = display;
+    }
+    this._updateDisplay();
+
+};
+
+AlterDom.prototype.hideDisplay = function hideDisplay(display) {
+
+    this._visible = false;
+    if(arguments.length === 1) {
+        this._display = display;
+    }
+    this._updateDisplay();
+
+};
+
+
+AlterDom.prototype._updateDisplay = function _updateDisplay() {
+
+    const display = this._visible ? this._display || 'block' : 'none';
+    this._el.style.display = display;
+
+};
+
+AlterDom.prototype.text = function text(text) {
+
+    this._el.innerText = text;
+
+};
+
+AlterDom.prototype.toggleClasses = function(changes){
+
+    const toHash = function(acc, v){ acc[v] = true; return acc;};
+    const current = this._el.className.split(' ').reduce(toHash, {});
+
+    for(const k in changes){
+        current[k] = changes[k];
+    }
+
+    const result = [];
+    for(const k in current) {
+        if(current[k])
+            result.push(k);
+    }
+
+    this._el.className = result.join(' ');
+    return this;
+
+};
+
+AlterDom.prototype.toggleClass = function(name, present){
+    const p = {};
+    p[name] = present;
+    return this.toggleClasses(p);
+};
+
+AlterDom.prototype.removeClass = function(name){
+    const p = {};
+    p[name] = false;
+    return this.toggleClasses(p);
+};
+
+AlterDom.prototype.addClass = function(name){
+    const p = {};
+    p[name] = true;
+    return this.toggleClasses(p);
+};
+
+AlterDom.prototype.attr = function(name, value) {
+    if(typeof value !== 'string') {
+        this._el.removeAttribute(name);
+    } else {
+        this._el.setAttribute(name, value);
+    }
+    return this;
+};
+
+AlterDom.prototype.attrs = function(changes) {
+    for(const k in changes){
+        this.attr(k, changes[k]);
+    }
+    return this;
+};
+
+AlterDom.prototype.prop = function(name, value) {
+    this._el[name] = value;
+    return this;
+};
+
+AlterDom.prototype.props = function(changes) {
+    for(const k in changes){
+        this.prop(k, changes[k]);
+    }
+    return this;
+};
+
+AlterDom.prototype.style = function(name, value) {
+    this._el.style[name] = value;
+    return this;
+};
+
+AlterDom.prototype.styles = function(changes) {
+    for(const k in changes){
+        this.style(k, changes[k]);
+    }
+    return this;
+};
+
 let _id = 0;
 
 function Cog(url, el, before, parent, config, index, key){
@@ -4187,14 +4339,14 @@ function Cog(url, el, before, parent, config, index, key){
     this.id = ++_id;
     this.type = 'cog';
     this.dead = false;
-    this.firstElement = null;
+    //this.firstElement = null;
     this.head = null;
     this.tail = null;
     this.placeholder = null;
     this.el = el; // ref element
     this.before = !!before; // el appendChild or insertBefore
     this.elements = [];
-    this.domElements = [];
+
     this.namedElements = {};
     this.children = [];
     this.parent = parent || null;
@@ -4279,17 +4431,19 @@ Cog.prototype.mountDisplay = function() {
     const len = named.length;
     const hash = this.namedElements;
     const scriptEls = this.script.els = {};
+    const scriptDom = this.script.dom = {};
 
     for(let i = 0; i < len; ++i){
         const el = named[i];
         const name = el.getAttribute('name');
         hash[name] = el;
         scriptEls[name] = el;
+        scriptDom[name] = new AlterDom(el);
     }
 
     this.elements = [].slice.call(frag.childNodes, 0);
     this.placeholder.parentNode.insertBefore(frag, this.placeholder);
-    this.firstElement = this.elements[0];
+  //  this.firstElement = this.elements[0];
 
 };
 
@@ -4458,19 +4612,14 @@ Cog.prototype.buildBuses = function buildBuses(){
 
 };
 
-
 Cog.prototype.buildBusFromNyan = function buildBusFromNyan(nyanStr, el){
     return this.scope.bus(nyanStr, this.script, el);
 };
-
 
 Cog.prototype.buildBusFromFunction = function buildBusFromFunction(f, el){
 
     //const bus = this.scope.bus()
 };
-
-
-
 
 Cog.prototype.buildCogs = function buildCogs(){
 
@@ -4536,10 +4685,12 @@ Cog.prototype.buildTraits = function buildTraits(){
 
     const len = traits.length;
     for(let i = 0; i < len; ++i){
+
         const def = traits[i]; // todo url and base instead of url/root?
         const instance = new Trait(this, def);
         instances.push(instance);
         instance.script.prep();
+
     }
 
 };
@@ -4614,7 +4765,6 @@ Cog.prototype.getFirstElement = function(){
 
 };
 
-
 Cog.prototype.getLastElement = function(){
 
     let c = this;
@@ -4624,9 +4774,6 @@ Cog.prototype.getLastElement = function(){
     return c.placeholder || c.elements[c.elements.length - 1];
 
 };
-
-
-
 
 Cog.prototype.mount = function mount(){
 
@@ -4668,7 +4815,6 @@ Cog.prototype.destroy = function(){
     this.children = [];
 
 };
-
 
 function _ASSERT_HTML_ELEMENT_EXISTS(name, el){
     if(!el){

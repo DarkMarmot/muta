@@ -14,13 +14,11 @@ let _id = 0;
 function Chain(url, el, before, parent, config, sourceName, keyField){
 
     this.id = ++_id;
-    this.firstElement = null;
     this.head = null;
     this.placeholder = null;
     this.el = el; // ref element
     this.before = !!before; // el appendChild or insertBefore
     this.elements = [];
-    this.domElements = [];
     this.namedElements = {};
     this.children = [];
     this.parent = parent || null;

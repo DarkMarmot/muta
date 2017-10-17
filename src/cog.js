@@ -8,6 +8,7 @@ import Catbus from './catbus.es.js';
 import Gear from './gear.js';
 import Chain from './chain.js';
 import PartBuilder from './partBuilder.js';
+import AlterDom from './alterDom.js';
 
 let _id = 0;
 
@@ -16,14 +17,14 @@ function Cog(url, el, before, parent, config, index, key){
     this.id = ++_id;
     this.type = 'cog';
     this.dead = false;
-    this.firstElement = null;
+    //this.firstElement = null;
     this.head = null;
     this.tail = null;
     this.placeholder = null;
     this.el = el; // ref element
     this.before = !!before; // el appendChild or insertBefore
     this.elements = [];
-    this.domElements = [];
+
     this.namedElements = {};
     this.children = [];
     this.parent = parent || null;
@@ -108,17 +109,19 @@ Cog.prototype.mountDisplay = function() {
     const len = named.length;
     const hash = this.namedElements;
     const scriptEls = this.script.els = {};
+    const scriptDom = this.script.dom = {};
 
     for(let i = 0; i < len; ++i){
         const el = named[i];
         const name = el.getAttribute('name');
         hash[name] = el;
         scriptEls[name] = el;
+        scriptDom[name] = new AlterDom(el);
     }
 
     this.elements = [].slice.call(frag.childNodes, 0);
     this.placeholder.parentNode.insertBefore(frag, this.placeholder);
-    this.firstElement = this.elements[0];
+  //  this.firstElement = this.elements[0];
 
 };
 
@@ -287,19 +290,14 @@ Cog.prototype.buildBuses = function buildBuses(){
 
 };
 
-
 Cog.prototype.buildBusFromNyan = function buildBusFromNyan(nyanStr, el){
     return this.scope.bus(nyanStr, this.script, el);
 };
-
 
 Cog.prototype.buildBusFromFunction = function buildBusFromFunction(f, el){
 
     //const bus = this.scope.bus()
 };
-
-
-
 
 Cog.prototype.buildCogs = function buildCogs(){
 
@@ -365,10 +363,12 @@ Cog.prototype.buildTraits = function buildTraits(){
 
     const len = traits.length;
     for(let i = 0; i < len; ++i){
+
         const def = traits[i]; // todo url and base instead of url/root?
         const instance = new Trait(this, def);
         instances.push(instance);
         instance.script.prep();
+
     }
 
 };
@@ -417,10 +417,10 @@ Cog.prototype.build = function build(){ // urls loaded
     this.buildWires();
     this.buildActions();
     this.buildRelays();
-    this.buildTraits(); // calls prep on all traits -- mixes states, actions, etc
 
     this.script.init();
 
+    this.buildTraits(); // calls prep on all traits -- mixes states, actions, etc
     this.initTraits(); // calls init on all traits
 
     this.buildBuses();
@@ -443,7 +443,6 @@ Cog.prototype.getFirstElement = function(){
 
 };
 
-
 Cog.prototype.getLastElement = function(){
 
     let c = this;
@@ -453,9 +452,6 @@ Cog.prototype.getLastElement = function(){
     return c.placeholder || c.elements[c.elements.length - 1];
 
 };
-
-
-
 
 Cog.prototype.mount = function mount(){
 
@@ -497,7 +493,6 @@ Cog.prototype.destroy = function(){
     this.children = [];
 
 };
-
 
 function _ASSERT_HTML_ELEMENT_EXISTS(name, el){
     if(!el){

@@ -107,6 +107,7 @@ AliasContext.prototype.injectAliasHash = function(aliasHash){
         this.injectAlias(addedList[i]);
     }
     return this;
+
 };
 
 

@@ -2,29 +2,32 @@
 import AliasContext from './aliasContext.js';
 import ScriptMonitor from './scriptMonitor.js';
 import ScriptLoader from './scriptLoader.js';
-import Placeholder from './placeholder.js';
 import Trait from './trait.js';
 import Catbus from './catbus.es.js';
 import Gear from './gear.js';
 import Chain from './chain.js';
 import PartBuilder from './partBuilder.js';
 import AlterDom from './alterDom.js';
+import Placeholder from './placeholder.js';
+
 
 let _id = 0;
 
-function Cog(url, el, before, parent, config, index, key){
+function Cog(url, slot, parent, config, index, key){
 
     this.id = ++_id;
     this.type = 'cog';
+    //this.slot = slot;
     this.dead = false;
-    //this.firstElement = null;
+
     this.head = null;
     this.tail = null;
-    this.placeholder = null;
-    this.el = el; // ref element
-    this.before = !!before; // el appendChild or insertBefore
-    this.elements = [];
+    this.first = null;
+    this.last = null;
 
+    this.placeholder = slot;
+    this.elements = [];
+    this.namedSlots = {};
     this.namedElements = {};
     this.children = [];
     this.parent = parent || null;
@@ -34,8 +37,6 @@ function Cog(url, el, before, parent, config, index, key){
     this.script = null;
     this.config = config || {};
     this.source = this.scope.demand('source');
-
-
 
     this.index = index;
     this.key = key;
@@ -61,39 +62,11 @@ function Cog(url, el, before, parent, config, index, key){
 
     }
 
-    this.usePlaceholder();
+
     this.load();
 
 }
 
-Cog.prototype.usePlaceholder = function() {
-
-    this.placeholder = Placeholder.take();
-
-    if(this.el) {
-        if (this.before) {
-            this.el.parentNode.insertBefore(this.placeholder, this.el);
-        } else {
-            this.el.appendChild(this.placeholder);
-        }
-    } else {
-
-            this.parent.placeholder.parentNode
-                .insertBefore(this.placeholder, this.parent.placeholder);
-
-    }
-
-};
-
-Cog.prototype.killPlaceholder = function() {
-
-    if(!this.placeholder)
-        return;
-
-    Placeholder.give(this.placeholder);
-    this.placeholder = null;
-
-};
 
 
 Cog.prototype.mountDisplay = function() {
@@ -114,14 +87,20 @@ Cog.prototype.mountDisplay = function() {
     for(let i = 0; i < len; ++i){
         const el = named[i];
         const name = el.getAttribute('name');
-        hash[name] = el;
-        scriptEls[name] = el;
-        scriptDom[name] = new AlterDom(el);
+        const tag = el.tagName;
+        if(tag === 'SLOT'){
+            this.namedSlots[name] = el;
+        } else {
+            hash[name] = el;
+            scriptEls[name] = el;
+            scriptDom[name] = new AlterDom(el);
+        }
     }
 
     this.elements = [].slice.call(frag.childNodes, 0);
     this.placeholder.parentNode.insertBefore(frag, this.placeholder);
-  //  this.firstElement = this.elements[0];
+    Placeholder.give(this.placeholder);
+    this.placeholder = null;
 
 };
 
@@ -238,6 +217,8 @@ Cog.prototype.buildStates = PartBuilder.buildStates;
 Cog.prototype.buildWires = PartBuilder.buildWires;
 Cog.prototype.buildRelays = PartBuilder.buildRelays;
 Cog.prototype.buildActions = PartBuilder.buildActions;
+Cog.prototype.output = PartBuilder.output;
+
 Cog.prototype.buildEvents = function buildEvents(){
 
     // todo add compile check -- 'target el' not found in display err!
@@ -290,6 +271,8 @@ Cog.prototype.buildBuses = function buildBuses(){
 
 };
 
+
+
 Cog.prototype.buildBusFromNyan = function buildBusFromNyan(nyanStr, el){
     return this.scope.bus(nyanStr, this.script, el);
 };
@@ -299,48 +282,85 @@ Cog.prototype.buildBusFromFunction = function buildBusFromFunction(f, el){
     //const bus = this.scope.bus()
 };
 
+
+
 Cog.prototype.buildCogs = function buildCogs(){
 
     const cogs = this.script.cogs;
     const children = this.children;
     const aliasContext = this.aliasContext;
+    // todo work this out in script load for perf
+    const count = this.elements.length;
 
-    const len = cogs.length;
-    for(let i = 0; i < len; ++i){
+    this.first = count ? this.elements[0] : null;
+    this.last = count ? this.elements[count - 1] : null;
 
-        const def = cogs[i];
+    for(const slotName in cogs){
+
+        const def = cogs[slotName];
         AliasContext.applySplitUrl(def);
 
-        const el = this.getNamedElement(def.el);
-        const before = !!(el && def.before);
-        const isHead = (i === 0 && this.elements.length === 0) ||
-            (!this.head && before && this.elements.length && el === this.elements[0]);
+        const slot = this.namedSlots[slotName];
+        let cog;
 
         if(def.type === 'gear') {
-            const gear = new Gear(def.url, el, before, this, def.config);
-            children.push(gear);
-            if (isHead)
-                this.head = gear;
+            cog = new Gear(def.url, slot, this, def.config);
         } else if (def.type === 'chain') {
             const url = aliasContext.resolveUrl(def.url, def.root);
-            const chain = new Chain(url, el, before, this, def.config, def.source);
-            children.push(chain);
-            if (isHead)
-                this.head = chain;
+            cog = new Chain(url, slot, this, def.config, def.source);
         } else {
             const url = aliasContext.resolveUrl(def.url, def.root);
-            const cog = new Cog(url, el, before, this, def.config);
-            children.push(cog);
-            if(isHead)
-                this.head = cog;
+            cog = new Cog(url, slot, this, def.config);
         }
+
+        children.push(cog);
+
+        if(slot === this.first)
+            this.head = cog;
+
+        if(slot === this.last)
+            this.tail = cog;
 
     }
 
-    if(len && !this.elements.length)
-        this.tail = children[len - 1];
 
 };
+
+
+Cog.prototype.buildChains = function buildChains(){
+
+    const chains = this.script.chains;
+    const children = this.children;
+    const aliasContext = this.aliasContext;
+    // todo work this out in script load for perf
+    const count = this.elements.length;
+
+    this.first = count ? this.elements[0] : null;
+    this.last = count ? this.elements[count - 1] : null;
+
+    for(const slotName in chains){
+
+        const def = chains[slotName];
+        AliasContext.applySplitUrl(def);
+
+        const slot = this.namedSlots[slotName];
+
+        const url = aliasContext.resolveUrl(def.url, def.root);
+        const chain = new Chain(url, slot, this, def.config, def.source);
+
+        children.push(chain);
+
+        if(slot === this.first)
+            this.head = chain;
+
+        if(slot === this.last)
+            this.tail = chain;
+
+    }
+
+
+};
+
 
 Cog.prototype.getNamedElement = function getNamedElement(name){
 
@@ -427,7 +447,7 @@ Cog.prototype.build = function build(){ // urls loaded
     this.buildEvents();
 
     this.buildCogs(); // placeholders for direct children, async loads possible
-    this.killPlaceholder();
+    this.buildChains();
     this.start(); // calls start for all traits
 
 };
@@ -468,25 +488,23 @@ Cog.prototype.start = function start(){
 
 };
 
+Cog.prototype.restorePlaceholder = function restorePlaceholder(){
+
+};
+
 Cog.prototype.destroy = function(){
 
     this.dead = true;
 
-    const len = this.children.length;
-    for(let i = 0; i < len; ++i){
+
+    for(let i = 0; i < this.children.length; ++i){
         const c = this.children[i];
         c.destroy();
     }
 
-    if(this.placeholder){
-        this.killPlaceholder();
-    } else {
-
-        const len = this.elements.length;
-        for(let i = 0; i < len; ++i){
-            const e = this.elements[i];
-            e.parentNode.removeChild(e);
-        }
+    for(let i = 0; i < this.elements.length; ++i){
+        const e = this.elements[i];
+        e.parentNode.removeChild(e);
     }
 
     this.scope.destroy();

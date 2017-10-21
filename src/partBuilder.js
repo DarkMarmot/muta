@@ -3,7 +3,12 @@ const PartBuilder = {};
 
 
 
+PartBuilder.output = function output(name, value){
 
+    const d = this.scope.find(name);
+    d.write(value);
+
+};
 
 PartBuilder.buildStates = function buildStates(){
 

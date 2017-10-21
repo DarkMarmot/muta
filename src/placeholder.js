@@ -1,8 +1,8 @@
 
 const pool = [];
 
-function createPlaceholderDiv(){
-    const d = document.createElement('div');
+function createSlot(){
+    const d = document.createElement('slot');
     d.style.display = 'none';
     return d;
 }
@@ -10,14 +10,19 @@ function createPlaceholderDiv(){
 const Placeholder = {};
 
 Placeholder.take = function(){
-    return pool.length ? pool.shift() : createPlaceholderDiv();
+    return pool.length ? pool.shift() : createSlot();
 };
 
 Placeholder.give = function(el){
-    pool.push(el);
+
     if(el.parentNode)
         el.parentNode.removeChild(el);
-};
 
+    if(el.hasAttribute('name'))
+        el.removeAttribute('name');
+
+    pool.push(el);
+
+};
 
 export default Placeholder;

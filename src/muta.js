@@ -8,16 +8,17 @@ let Muta = {};
 const NOOP = function(){};
 const TRUE = function(){ return true;};
 
-Muta.init = function init(el, url){
+Muta.init = function init(slot, url){
 
     url = PathResolver.resolveUrl(null, url);
-    return new Cog(url, el);
+    return new Cog(url, slot);
 
 };
 
 const defaultMethods = ['prep','init','mount','start','unmount','destroy'];
-const defaultArrays = ['alias', 'cogs', 'traits', 'states', 'actions', 'buses', 'books', 'relays'];
-const defaultHashes = ['els', 'methods', 'events'];
+const defaultArrays = ['alias', 'traits', 'states', 'actions', 'buses', 'books', 'relays'];
+const defaultHashes = ['els', 'cogs', 'chains', 'gears', 'methods', 'events'];
+
 
 
 function createWhiteList(v){
@@ -62,10 +63,12 @@ function prepDataDefs(data, asActions){
 
 Muta.cog = function cog(def){
 
+
     def.id = 0;
     def.api = null;
     def.config = null;
     def.type = 'cog';
+
 
     for(let i = 0; i < defaultHashes.length; i++){
         const name = defaultHashes[i];
@@ -81,6 +84,7 @@ Muta.cog = function cog(def){
         const name = defaultMethods[i];
         def[name] = def[name] || NOOP;
     }
+
 
     def.states = prepDataDefs(def.states);
     def.wires  = prepDataDefs(def.wires);

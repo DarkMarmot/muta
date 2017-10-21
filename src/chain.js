@@ -11,13 +11,12 @@ import Cog from './cog.js';
 
 let _id = 0;
 
-function Chain(url, el, before, parent, config, sourceName, keyField){
+function Chain(url, slot, parent, config, sourceName, keyField){
 
     this.id = ++_id;
     this.head = null;
-    this.placeholder = null;
-    this.el = el; // ref element
-    this.before = !!before; // el appendChild or insertBefore
+    this.placeholder = slot;
+
     this.elements = [];
     this.namedElements = {};
     this.children = [];
@@ -46,8 +45,6 @@ function Chain(url, el, before, parent, config, sourceName, keyField){
 
     }
 
-
-    this.usePlaceholder();
     this.load();
 
 }
@@ -227,15 +224,14 @@ Chain.prototype.buildCogsByIndex = function buildCogsByIndex(msg){
 
     if(len === 0 && childCount > 0){
 
-        // todo assert no placeholder
         // restore placeholder as all children will be gone
         const el = this.getFirstElement(); // grab first child element
-        this.placeholder = this.placeholder || Placeholder.take();
+        this.placeholder = Placeholder.take();
         el.parentNode.insertBefore(this.placeholder, el);
 
     }
 
-    if(childCount < len) {
+    if(childCount < len) { // create new children
 
         const lastEl = this.getLastElement();
         const nextEl = lastEl.nextElementSibling;
@@ -245,7 +241,13 @@ Chain.prototype.buildCogsByIndex = function buildCogsByIndex(msg){
 
         for (let i = childCount; i < len; ++i) {
             // create cogs for new data
-            const cog = new Cog(this.url, el, before, this, this.config, i);
+            const slot = Placeholder.take();
+            if (before) {
+                el.parentNode.insertBefore(slot, el);
+            } else {
+                el.appendChild(slot);
+            }
+            const cog = new Cog(this.url, slot, this, this.config, i);
             const d = msg[i];
             cog.source.write(d);
             children.push(cog);
@@ -264,8 +266,6 @@ Chain.prototype.buildCogsByIndex = function buildCogsByIndex(msg){
     this.tail = children.length > 0 ? children[children.length - 1] : null;
     this.head = children.length > 0 ? children[0] : null;
 
-    if(len > 0)
-        this.killPlaceholder();
 
 };
 

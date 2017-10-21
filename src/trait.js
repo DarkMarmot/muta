@@ -21,6 +21,7 @@ function Trait(cog, def){
 }
 
 Trait.prototype.buildRelays = PartBuilder.buildRelays;
+Trait.prototype.output = PartBuilder.output;
 
 Trait.prototype.buildBuses = function buildBuses(){
 

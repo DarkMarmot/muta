@@ -2,6 +2,26 @@
 const PartBuilder = {};
 
 
+PartBuilder.buildConfig = function buildConfig(def){
+
+    if(!def && !this.parent) // empty root config
+        def = {};
+
+    if(def){
+        def = def.config || def;
+        const d = this.scope.demand('config');
+
+        if(typeof def === 'string'){
+            const meow = def + ' | config';
+            this.buildBusFromNyan(meow).pull();
+        } else {
+            d.write(def);
+        }
+        this.config = def;
+    }
+};
+
+
 
 PartBuilder.output = function output(name, value){
 
@@ -100,8 +120,8 @@ PartBuilder.buildRelays = function buildRelays(){
         const remoteActionName = actionProp && config[actionProp];
         const remoteStateName = stateProp && config[stateProp];
 
-        let remoteAction = remoteActionName ? scope.find(remoteActionName, true) : null;
-        let remoteState = remoteStateName ? scope.find(remoteStateName, true) : null;
+        let remoteAction = remoteActionName ? scope._parent.find(remoteActionName, true) : null;
+        let remoteState = remoteStateName ? scope._parent.find(remoteStateName, true) : null;
 
         let localAction = actionName ? scope.demand(actionName) : null;
         let localState = stateName ? scope.demand(stateName) : null;

@@ -35,6 +35,40 @@ function createWhiteList(v){
     return TRUE;
 }
 
+function prepCogDefs(data){
+
+    if(!data)
+        return data;
+
+    for(const name in data){
+
+        const val = data[name];
+        const def = val && typeof val === 'string' ? {url: val} : val;
+        data[name] = def;
+
+    }
+
+    return data;
+
+}
+
+function prepGearDefs(data){
+
+    if(!data)
+        return data;
+
+    for(const name in data){
+
+        const val = data[name];
+        const def = val && typeof val === 'string' ? {url: val} : val;
+        data[name] = def;
+
+    }
+
+    return data;
+
+}
+
 function prepDataDefs(data, asActions){
 
     if(!data)
@@ -86,6 +120,8 @@ Muta.cog = function cog(def){
     }
 
 
+    def.cogs = prepCogDefs(def.cogs);
+    def.gears = prepCogDefs(def.gears);
     def.states = prepDataDefs(def.states);
     def.wires  = prepDataDefs(def.wires);
     def.actions  = prepDataDefs(def.actions, true);

@@ -3,15 +3,13 @@ import AliasContext from './aliasContext.js';
 import ScriptMonitor from './scriptMonitor.js';
 import ScriptLoader from './scriptLoader.js';
 import Placeholder from './placeholder.js';
-import Trait from './trait.js';
 import Catbus from './catbus.es.js';
-import Gear from './gear.js';
 import Cog from './cog.js';
-
+import PartBuilder from './partBuilder.js';
 
 let _id = 0;
 
-function Chain(url, slot, parent, config, sourceName, keyField){
+function Chain(url, slot, parent, def, sourceName, keyField){
 
     this.id = ++_id;
     this.head = null;
@@ -25,7 +23,7 @@ function Chain(url, slot, parent, config, sourceName, keyField){
     this.url = url;
     this.root = '';
     this.script = null;
-    this.config = config || {};
+    this.config = null; //(def && def.config) || def || {};
     this.scriptMonitor = null;
     this.aliasValveMap = null;
     this.aliasContext = null;
@@ -33,40 +31,15 @@ function Chain(url, slot, parent, config, sourceName, keyField){
     this.keyField = keyField;
     this.bus = null;
 
-    if(parent && parent.type !== 'chain') {
-        const d = this.scope.demand('config');
-        const c = this.config;
-        if(typeof c === 'string'){
-            const nyan = c + ' | config';
-            this.buildBusFromNyan(nyan).pull();
-        } else {
-            d.write(c);
-        }
-
-    }
+    this.buildConfig(def);
 
     this.load();
 
 }
 
-Chain.prototype.usePlaceholder = function() {
+Chain.prototype.buildConfig = PartBuilder.buildConfig;
 
 
-    this.placeholder = Placeholder.take();
-
-    if(this.el) {
-        if (this.before) {
-            this.el.parentNode.insertBefore(this.placeholder, this.el);
-        } else {
-            this.el.appendChild(this.placeholder);
-        }
-    } else {
-
-        this.parent.placeholder.parentNode
-            .insertBefore(this.placeholder, this.parent.placeholder);
-    }
-
-};
 
 Chain.prototype.killPlaceholder = function() {
 

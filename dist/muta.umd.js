@@ -1428,6 +1428,27 @@ function throwError(msg){
     throw e;
 }
 
+function getDoSkipNamedDupes(names){
+
+    let lastMsg = {};
+    const len = names.length;
+
+    return function doSkipNamedDupes(msg) {
+
+        let diff = false;
+        for(let i = 0; i < len; i++){
+            const name = names[i];
+            if(!lastMsg.hasOwnProperty(name) || lastMsg[name] !== msg[name] || isObject(msg[name]))
+                diff = true;
+            lastMsg[name] = msg[name];
+        }
+
+        return diff;
+
+    };
+}
+
+
 function getDoSpray(scope, phrase){
 
     const wordByAlias = {};
@@ -1666,7 +1687,7 @@ function applyReaction(scope, bus, phrase, target, lookup) { // target is some e
 
         if(operation === 'WATCH') {
             addDataSource(bus, scope, word);
-            //skipDupes.push(word.alias)
+            skipDupes.push(word.alias);
         }
         else if(operation === 'WIRE'){
             addDataSource(bus, scope, word);
@@ -1695,9 +1716,9 @@ function applyReaction(scope, bus, phrase, target, lookup) { // target is some e
         if(need.length)
             bus.hasKeys(need);
 
-        // if(skipDupes.length){
-        //     bus.filter(getDoSkipNamedDupes(skipDupes));
-        // }
+        if(skipDupes.length){
+            bus.filter(getDoSkipNamedDupes(skipDupes));
+        }
 
     } else {
 
@@ -2571,6 +2592,7 @@ class Scope{
         this._valveMap = new Map();
         this._mirrorMap = new Map();
         this._dead = false;
+        this._shared = false; // shared scopes can access private actions and states in their parent
 
     };
 
@@ -2801,6 +2823,12 @@ class Scope{
 
         if(localData)
             return localData;
+
+        // if(this.shared){
+        //     const sharedData = this._parent.grab(name);
+        //     if(sharedData)
+        //         return sharedData;
+        // }
 
         let scope = this;
 
@@ -3534,6 +3562,26 @@ function copy(source, target){
 const PartBuilder = {};
 
 
+PartBuilder.buildConfig = function buildConfig(def){
+
+    if(!def && !this.parent) // empty root config
+        def = {};
+
+    if(def){
+        def = def.config || def;
+        const d = this.scope.demand('config');
+
+        if(typeof def === 'string'){
+            const meow = def + ' | config';
+            this.buildBusFromNyan(meow).pull();
+        } else {
+            d.write(def);
+        }
+        this.config = def;
+    }
+};
+
+
 
 PartBuilder.output = function output(name, value){
 
@@ -3632,8 +3680,8 @@ PartBuilder.buildRelays = function buildRelays(){
         const remoteActionName = actionProp && config[actionProp];
         const remoteStateName = stateProp && config[stateProp];
 
-        let remoteAction = remoteActionName ? scope.find(remoteActionName, true) : null;
-        let remoteState = remoteStateName ? scope.find(remoteStateName, true) : null;
+        let remoteAction = remoteActionName ? scope._parent.find(remoteActionName, true) : null;
+        let remoteState = remoteStateName ? scope._parent.find(remoteStateName, true) : null;
 
         let localAction = actionName ? scope.demand(actionName) : null;
         let localState = stateName ? scope.demand(stateName) : null;
@@ -3756,50 +3804,32 @@ Placeholder.give = function(el){
 
 let _id$1 = 0;
 
-function Gear(url, el, before, parent, config){
+function Gear(url, slot, parent, def){
 
     this.id = ++_id$1;
-    this.placeholder = null;
+    this.placeholder = slot;
     this.head = null;
 
-    this.el = el; // ref element
-    this.before = !!before; // el appendChild or insertBefore
     this.elements = [];
     this.children = [];
     this.parent = parent;
     this.scope = parent.scope.createChild();
     this.root = parent.root;
-    this.config = config || {};
+    this.config = null; //(def && def.config) || def || {};
     this.aliasContext = parent.aliasContext;
 
 
-    this.usePlaceholder();
-
+    this.buildConfig(def);
     // todo add err url must be data pt! not real url (no dots in dp)
 
     const nyan = url + ' | *createCog';
     this.bus = this.scope.bus(nyan, this).pull();
 
-
 }
 
-Gear.prototype.usePlaceholder = function() {
+Gear.prototype.buildConfig = PartBuilder.buildConfig;
 
-    this.placeholder = Placeholder.take();
 
-    if(this.el) {
-        if (this.before) {
-            this.el.parentNode.insertBefore(this.placeholder, this.el);
-        } else {
-            this.el.appendChild(this.placeholder);
-        }
-    } else {
-
-        this.parent.placeholder.parentNode
-            .insertBefore(this.placeholder, this.parent.placeholder);
-    }
-
-};
 
 Gear.prototype.killPlaceholder = function() {
 
@@ -3824,19 +3854,20 @@ Gear.prototype.createCog = function createCog(msg){
 
         const oldCog = children[0];
         const el = oldCog.getFirstElement(); //oldCog.elements[0]; // todo recurse first element for virtual cog
-        const cog = new Cog(url, el, true, this, this.config);
+        const slot = Placeholder.take();
+        el.parentNode.insertBefore(slot, el);
+        const cog = new Cog(url, slot, this);
         children.push(cog);
         children.shift();
         oldCog.destroy();
 
     } else {
 
-        const cog = new Cog(url, this.placeholder, true, this, this.config);
+        const cog = new Cog(url, this.placeholder, this);
         children.push(cog);
 
     }
 
-    this.killPlaceholder();
 
 
 };
@@ -3869,13 +3900,6 @@ Gear.prototype.destroy =  function(){
 
     if(this.placeholder){
         this.killPlaceholder();
-    } else {
-
-        const len = this.elements.length;
-        for(let i = 0; i < len; ++i){
-            const e = this.elements[i];
-            e.parentNode.removeChild(e);
-        }
     }
 
     this.scope.destroy();
@@ -3885,7 +3909,7 @@ Gear.prototype.destroy =  function(){
 
 let _id$2 = 0;
 
-function Chain(url, slot, parent, config, sourceName, keyField){
+function Chain(url, slot, parent, def, sourceName, keyField){
 
     this.id = ++_id$2;
     this.head = null;
@@ -3899,7 +3923,7 @@ function Chain(url, slot, parent, config, sourceName, keyField){
     this.url = url;
     this.root = '';
     this.script = null;
-    this.config = config || {};
+    this.config = null; //(def && def.config) || def || {};
     this.scriptMonitor = null;
     this.aliasValveMap = null;
     this.aliasContext = null;
@@ -3907,40 +3931,15 @@ function Chain(url, slot, parent, config, sourceName, keyField){
     this.keyField = keyField;
     this.bus = null;
 
-    if(parent && parent.type !== 'chain') {
-        const d = this.scope.demand('config');
-        const c = this.config;
-        if(typeof c === 'string'){
-            const nyan = c + ' | config';
-            this.buildBusFromNyan(nyan).pull();
-        } else {
-            d.write(c);
-        }
-
-    }
+    this.buildConfig(def);
 
     this.load();
 
 }
 
-Chain.prototype.usePlaceholder = function() {
+Chain.prototype.buildConfig = PartBuilder.buildConfig;
 
 
-    this.placeholder = Placeholder.take();
-
-    if(this.el) {
-        if (this.before) {
-            this.el.parentNode.insertBefore(this.placeholder, this.el);
-        } else {
-            this.el.appendChild(this.placeholder);
-        }
-    } else {
-
-        this.parent.placeholder.parentNode
-            .insertBefore(this.placeholder, this.parent.placeholder);
-    }
-
-};
 
 Chain.prototype.killPlaceholder = function() {
 
@@ -4347,11 +4346,10 @@ AlterDom.prototype.styles = function(changes) {
 
 let _id = 0;
 
-function Cog(url, slot, parent, config, index, key){
+function Cog(url, slot, parent, def, index, key){
 
     this.id = ++_id;
     this.type = 'cog';
-    //this.slot = slot;
     this.dead = false;
 
     this.head = null;
@@ -4369,7 +4367,7 @@ function Cog(url, slot, parent, config, index, key){
     this.url = url;
     this.root = '';
     this.script = null;
-    this.config = config || {};
+    this.config = null; //(def && def.config) || def || {}; // todo inherit parent config if in chain?
     this.source = this.scope.demand('source');
 
     this.index = index;
@@ -4384,17 +4382,7 @@ function Cog(url, slot, parent, config, index, key){
     this.traitInstances = [];
     this.busInstances = [];
 
-    if(parent && parent.type === 'cog') {
-        const d = this.scope.demand('config');
-        const c = this.config;
-        if(typeof c === 'string'){
-            const nyan = c + ' | config';
-            this.buildBusFromNyan(nyan).pull();
-        } else {
-           d.write(c);
-        }
-
-    }
+    this.buildConfig(def);
 
 
     this.load();
@@ -4552,6 +4540,7 @@ Cog.prototype.buildWires = PartBuilder.buildWires;
 Cog.prototype.buildRelays = PartBuilder.buildRelays;
 Cog.prototype.buildActions = PartBuilder.buildActions;
 Cog.prototype.output = PartBuilder.output;
+Cog.prototype.buildConfig = PartBuilder.buildConfig;
 
 Cog.prototype.buildEvents = function buildEvents(){
 
@@ -4638,13 +4627,13 @@ Cog.prototype.buildCogs = function buildCogs(){
         let cog;
 
         if(def.type === 'gear') {
-            cog = new Gear(def.url, slot, this, def.config);
+            cog = new Gear(def.url, slot, this, def);
         } else if (def.type === 'chain') {
             const url = aliasContext.resolveUrl(def.url, def.root);
-            cog = new Chain(url, slot, this, def.config, def.source);
+            cog = new Chain(url, slot, this, def, def.source);
         } else {
             const url = aliasContext.resolveUrl(def.url, def.root);
-            cog = new Cog(url, slot, this, def.config);
+            cog = new Cog(url, slot, this, def);
         }
 
         children.push(cog);
@@ -4660,6 +4649,34 @@ Cog.prototype.buildCogs = function buildCogs(){
 
 };
 
+Cog.prototype.buildGears = function buildGears(){
+
+    const gears = this.script.gears;
+    const children = this.children;
+    const count = this.elements.length;
+
+    this.first = count ? this.elements[0] : null;
+    this.last = count ? this.elements[count - 1] : null;
+
+    for(const slotName in gears){
+
+        const def = gears[slotName];
+
+        const slot = this.namedSlots[slotName];
+        const gear = new Gear(def.url, slot, this, def);
+
+        children.push(gear);
+
+        if(slot === this.first)
+            this.head = gear;
+
+        if(slot === this.last)
+            this.tail = gear;
+
+    }
+
+
+};
 
 Cog.prototype.buildChains = function buildChains(){
 
@@ -4781,6 +4798,7 @@ Cog.prototype.build = function build(){ // urls loaded
     this.buildEvents();
 
     this.buildCogs(); // placeholders for direct children, async loads possible
+    this.buildGears();
     this.buildChains();
     this.start(); // calls start for all traits
 
@@ -4841,6 +4859,7 @@ Cog.prototype.destroy = function(){
         e.parentNode.removeChild(e);
     }
 
+    this.script.destroy();
     this.scope.destroy();
     this.children = [];
 
@@ -4881,6 +4900,23 @@ function createWhiteList(v){
     }
 
     return TRUE;
+}
+
+function prepCogDefs(data){
+
+    if(!data)
+        return data;
+
+    for(const name in data){
+
+        const val = data[name];
+        const def = val && typeof val === 'string' ? {url: val} : val;
+        data[name] = def;
+
+    }
+
+    return data;
+
 }
 
 function prepDataDefs(data, asActions){
@@ -4934,6 +4970,8 @@ Muta.cog = function cog(def){
     }
 
 
+    def.cogs = prepCogDefs(def.cogs);
+    def.gears = prepCogDefs(def.gears);
     def.states = prepDataDefs(def.states);
     def.wires  = prepDataDefs(def.wires);
     def.actions  = prepDataDefs(def.actions, true);

@@ -1,58 +1,37 @@
 
-import AliasContext from './aliasContext.js';
-import ScriptMonitor from './scriptMonitor.js';
-import ScriptLoader from './scriptLoader.js';
+
 import Placeholder from './placeholder.js';
-import Trait from './trait.js';
-import Catbus from './catbus.es.js';
 import Cog from './cog.js';
+import PartBuilder from './partBuilder.js';
 
 let _id = 0;
 
-function Gear(url, el, before, parent, config){
+function Gear(url, slot, parent, def){
 
     this.id = ++_id;
-    this.placeholder = null;
+    this.placeholder = slot;
     this.head = null;
 
-    this.el = el; // ref element
-    this.before = !!before; // el appendChild or insertBefore
     this.elements = [];
     this.children = [];
     this.parent = parent;
     this.scope = parent.scope.createChild();
     this.root = parent.root;
-    this.config = config || {};
+    this.config = null; //(def && def.config) || def || {};
     this.aliasContext = parent.aliasContext;
 
 
-    this.usePlaceholder();
-
+    this.buildConfig(def);
     // todo add err url must be data pt! not real url (no dots in dp)
 
     const nyan = url + ' | *createCog';
     this.bus = this.scope.bus(nyan, this).pull();
 
-
 }
 
-Gear.prototype.usePlaceholder = function() {
+Gear.prototype.buildConfig = PartBuilder.buildConfig;
 
-    this.placeholder = Placeholder.take();
 
-    if(this.el) {
-        if (this.before) {
-            this.el.parentNode.insertBefore(this.placeholder, this.el);
-        } else {
-            this.el.appendChild(this.placeholder);
-        }
-    } else {
-
-        this.parent.placeholder.parentNode
-            .insertBefore(this.placeholder, this.parent.placeholder);
-    }
-
-};
 
 Gear.prototype.killPlaceholder = function() {
 
@@ -77,19 +56,20 @@ Gear.prototype.createCog = function createCog(msg){
 
         const oldCog = children[0];
         const el = oldCog.getFirstElement(); //oldCog.elements[0]; // todo recurse first element for virtual cog
-        const cog = new Cog(url, el, true, this, this.config);
+        const slot = Placeholder.take();
+        el.parentNode.insertBefore(slot, el);
+        const cog = new Cog(url, slot, this);
         children.push(cog);
         children.shift();
         oldCog.destroy();
 
     } else {
 
-        const cog = new Cog(url, this.placeholder, true, this, this.config);
+        const cog = new Cog(url, this.placeholder, this);
         children.push(cog);
 
     }
 
-    this.killPlaceholder();
 
 
 };
@@ -122,13 +102,6 @@ Gear.prototype.destroy =  function(){
 
     if(this.placeholder){
         this.killPlaceholder();
-    } else {
-
-        const len = this.elements.length;
-        for(let i = 0; i < len; ++i){
-            const e = this.elements[i];
-            e.parentNode.removeChild(e);
-        }
     }
 
     this.scope.destroy();

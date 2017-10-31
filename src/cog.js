@@ -13,11 +13,10 @@ import Placeholder from './placeholder.js';
 
 let _id = 0;
 
-function Cog(url, slot, parent, config, index, key){
+function Cog(url, slot, parent, def, index, key){
 
     this.id = ++_id;
     this.type = 'cog';
-    //this.slot = slot;
     this.dead = false;
 
     this.head = null;
@@ -35,7 +34,7 @@ function Cog(url, slot, parent, config, index, key){
     this.url = url;
     this.root = '';
     this.script = null;
-    this.config = config || {};
+    this.config = null; //(def && def.config) || def || {}; // todo inherit parent config if in chain?
     this.source = this.scope.demand('source');
 
     this.index = index;
@@ -50,17 +49,7 @@ function Cog(url, slot, parent, config, index, key){
     this.traitInstances = [];
     this.busInstances = [];
 
-    if(parent && parent.type === 'cog') {
-        const d = this.scope.demand('config');
-        const c = this.config;
-        if(typeof c === 'string'){
-            const nyan = c + ' | config';
-            this.buildBusFromNyan(nyan).pull();
-        } else {
-           d.write(c);
-        }
-
-    }
+    this.buildConfig(def);
 
 
     this.load();
@@ -218,6 +207,7 @@ Cog.prototype.buildWires = PartBuilder.buildWires;
 Cog.prototype.buildRelays = PartBuilder.buildRelays;
 Cog.prototype.buildActions = PartBuilder.buildActions;
 Cog.prototype.output = PartBuilder.output;
+Cog.prototype.buildConfig = PartBuilder.buildConfig;
 
 Cog.prototype.buildEvents = function buildEvents(){
 
@@ -304,13 +294,13 @@ Cog.prototype.buildCogs = function buildCogs(){
         let cog;
 
         if(def.type === 'gear') {
-            cog = new Gear(def.url, slot, this, def.config);
+            cog = new Gear(def.url, slot, this, def);
         } else if (def.type === 'chain') {
             const url = aliasContext.resolveUrl(def.url, def.root);
-            cog = new Chain(url, slot, this, def.config, def.source);
+            cog = new Chain(url, slot, this, def, def.source);
         } else {
             const url = aliasContext.resolveUrl(def.url, def.root);
-            cog = new Cog(url, slot, this, def.config);
+            cog = new Cog(url, slot, this, def);
         }
 
         children.push(cog);
@@ -326,6 +316,34 @@ Cog.prototype.buildCogs = function buildCogs(){
 
 };
 
+Cog.prototype.buildGears = function buildGears(){
+
+    const gears = this.script.gears;
+    const children = this.children;
+    const count = this.elements.length;
+
+    this.first = count ? this.elements[0] : null;
+    this.last = count ? this.elements[count - 1] : null;
+
+    for(const slotName in gears){
+
+        const def = gears[slotName];
+
+        const slot = this.namedSlots[slotName];
+        const gear = new Gear(def.url, slot, this, def);
+
+        children.push(gear);
+
+        if(slot === this.first)
+            this.head = gear;
+
+        if(slot === this.last)
+            this.tail = gear;
+
+    }
+
+
+};
 
 Cog.prototype.buildChains = function buildChains(){
 
@@ -447,6 +465,7 @@ Cog.prototype.build = function build(){ // urls loaded
     this.buildEvents();
 
     this.buildCogs(); // placeholders for direct children, async loads possible
+    this.buildGears();
     this.buildChains();
     this.start(); // calls start for all traits
 
@@ -507,6 +526,7 @@ Cog.prototype.destroy = function(){
         e.parentNode.removeChild(e);
     }
 
+    this.script.destroy();
     this.scope.destroy();
     this.children = [];
 

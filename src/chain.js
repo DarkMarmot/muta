@@ -175,8 +175,8 @@ Chain.prototype.getNamedElement = function getNamedElement(name){
 
 Chain.prototype.build = function build(){ // urls loaded
 
-    const nyan = this.sourceName + ' | *buildCogsByIndex';
-    this.bus = this.scope.bus(nyan, this).pull();
+    const meow = this.sourceName + ' * buildCogsByIndex';
+    this.bus = this.scope.bus().context(this).meow(meow).pull();
 
 };
 

@@ -215,6 +215,7 @@ Cog.prototype.buildEvents = function buildEvents(){
 
     const events = this.script.events;
     const buses = this.busInstances;
+    const scope = this.scope;
 
     for(const name in events){
 
@@ -225,11 +226,11 @@ Cog.prototype.buildEvents = function buildEvents(){
 
         if(Array.isArray(value)){
             for(let i = 0; i < value.length; ++i){
-                const bus = this.buildBusFromNyan(value[i], el);
+                const bus = scope.bus().context(this.script).target(el).meow(value[i]);
                 buses.push(bus);
             }
         } else {
-            const bus = this.buildBusFromNyan(value, el);
+            const bus = scope.bus().context(this.script).target(el).meow(value);
             buses.push(bus);
         }
 
@@ -241,6 +242,7 @@ Cog.prototype.buildBuses = function buildBuses(){
 
     const buses = this.script.buses;
     const wires = this.script.wires;
+    const scope = this.scope;
 
     const len = buses.length;
     const instances = this.busInstances;
@@ -253,7 +255,7 @@ Cog.prototype.buildBuses = function buildBuses(){
     for(let i = 0; i < len; ++i){
 
         const def = buses[i];
-        const bus = this.buildBusFromNyan(def); // todo add function support not just nyan str
+        const bus = scope.bus().context(this.script).meow(def); // todo add function support not just meow str
         bus.pull();
         instances.push(bus);
 
@@ -262,15 +264,15 @@ Cog.prototype.buildBuses = function buildBuses(){
 };
 
 
-
-Cog.prototype.buildBusFromNyan = function buildBusFromNyan(nyanStr, el){
-    return this.scope.bus(nyanStr, this.script, el);
-};
-
-Cog.prototype.buildBusFromFunction = function buildBusFromFunction(f, el){
-
-    //const bus = this.scope.bus()
-};
+//
+// Cog.prototype.buildBusFromNyan = function buildBusFromNyan(nyanStr, el){
+//     return this.scope.bus(nyanStr, this.script, el);
+// };
+//
+// Cog.prototype.buildBusFromFunction = function buildBusFromFunction(f, el){
+//
+//     //const bus = this.scope.bus()
+// };
 
 
 

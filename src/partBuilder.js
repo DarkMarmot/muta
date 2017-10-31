@@ -12,8 +12,8 @@ PartBuilder.buildConfig = function buildConfig(def){
         const d = this.scope.demand('config');
 
         if(typeof def === 'string'){
-            const meow = def + ' | config';
-            this.buildBusFromNyan(meow).pull();
+            const meow = def + ' > config';
+            this.scope.bus().meow(meow).pull();
         } else {
             d.write(def);
         }

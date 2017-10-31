@@ -24,8 +24,8 @@ function Gear(url, slot, parent, def){
     this.buildConfig(def);
     // todo add err url must be data pt! not real url (no dots in dp)
 
-    const nyan = url + ' | *createCog';
-    this.bus = this.scope.bus(nyan, this).pull();
+    const meow = url + ' * createCog';
+    this.bus = this.scope.bus().context(this).meow(meow).pull();
 
 }
 

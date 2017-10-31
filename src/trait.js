@@ -27,6 +27,7 @@ Trait.prototype.buildBuses = function buildBuses(){
 
     const buses = this.script.buses || [];
     const wires = this.script.wires || [];
+    const scope = this.scope;
 
     const len = buses.length;
 
@@ -38,17 +39,17 @@ Trait.prototype.buildBuses = function buildBuses(){
     for(let i = 0; i < len; ++i){
 
         const def = buses[i];
-        const bus = this.buildBusFromNyan(def); // todo add function support not just nyan str
+        const bus = scope.bus().context(this.script).meow(def); // todo add function support not just meow str
         bus.pull();
 
     }
 
 };
 
-
-Trait.prototype.buildBusFromNyan = function buildBusFromNyan(nyanStr, el){
-    return this.scope.bus(nyanStr, this.script, el);
-};
+//
+// Trait.prototype.buildBusFromNyan = function buildBusFromNyan(nyanStr, el){
+//     return this.scope.bus(nyanStr, this.script, el);
+// };
 
 
 export default Trait;

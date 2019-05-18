@@ -1,0 +1,9 @@
+{
+  "name": "cog-interface-designs",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "scripts": {
+      "build": "rollup --format umd --output dist/module.umd.js index.js"
+  }
+}
